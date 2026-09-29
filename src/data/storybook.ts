@@ -479,15 +479,17 @@ export const storybook: StorybookData = {
     },
   ],
 
-  // Stock MUI values — the typography block in theme.ts is currently all
-  // commented, so what renders IS this table.
+  // What theme.ts actually renders, not MUI stock. Every variant below is stock
+  // EXCEPT h1 (stock 96px, resized to 4rem) and h2 (stock 60px/300, resized and
+  // reweighted to 1.75rem/500) — the two live overrides in `typography`. Sizes
+  // are the ≥1200px step; responsiveFontSizes() scales h1–h6 down below that.
   typeScale: [
     {
       family: 'Headings',
       sample: 'Section overview',
       items: [
-        { variant: 'h1', px: 96, weight: 300 },
-        { variant: 'h2', px: 60, weight: 300 },
+        { variant: 'h1', px: 64, weight: 300 },
+        { variant: 'h2', px: 28, weight: 500 },
         { variant: 'h3', px: 48, weight: 400 },
         { variant: 'h4', px: 34, weight: 400 },
         { variant: 'h5', px: 24, weight: 400 },
@@ -801,7 +803,7 @@ export const storybook: StorybookData = {
           prop: 'variant',
           measure: 'font-size',
           values: [
-            { name: 'h1…h6', value: '96 → 20px' },
+            { name: 'h1…h6', value: '64 → 20px' },
             { name: 'body1 · body2', value: '16 · 14px' },
             { name: 'caption', value: '12px' },
           ],

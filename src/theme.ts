@@ -203,9 +203,9 @@ declare module '@mui/material/styles' {
  *
  * `responsiveFontSizes` is MUI's ONLY built-in auto-responsive helper, and it
  * is a post-processor: it takes a finished theme and rewrites each typography
- * variant into a base size plus `@media (min-width:…)` steps at sm/md/lg. Stock
- * h1 is 96px at every width — fine on a workstation, three-quarters of a phone
- * screen otherwise.
+ * variant into a base size plus `@media (min-width:…)` steps at sm/md/lg. A
+ * heading is otherwise one size at every width — fine on a workstation, a large
+ * bite out of a phone screen otherwise.
  *
  * What it does NOT touch, and why this is a narrow change:
  *  - Only variants ABOVE 1rem are rewritten. The helper's default list names 13
@@ -213,7 +213,8 @@ declare module '@mui/material/styles' {
  *    button, caption and overline come through untouched — in practice this is
  *    h1–h6 only.
  *  - `factor: 2` (the default) sets how far they shrink: the small-screen size
- *    is 1rem + (max - 1rem) / 2, so h1 goes 96px → ~56px, never below 1rem.
+ *    is 1rem + (max - 1rem) / 2, so our 4rem h1 goes 64px → 40px, never below
+ *    1rem.
  *  - Nothing outside `typography`. The helper shallow-copies the theme, so the
  *    custom `layout` group, `vars`, `colorSchemes` and every component override
  *    survive by reference.
@@ -451,6 +452,30 @@ export const theme = responsiveFontSizes(createTheme({
   // before using a weight outside that set.
   typography: {
     fontFamily: '"Inter", "Helvetica", "Arial", sans-serif',
+
+    // Stock h1 is 6rem (96px) — display size, built for a marketing hero, not
+    // for a name sitting in a record header. 4rem holds the top of the type
+    // ramp without swamping the card. The one call site (the patient name in
+    // PatientChart) gets no inline fontSize: size belongs to the scale, so the
+    // next h1 inherits this instead of re-deciding it.
+    //
+    // Only fontSize is named — MUI deep-merges per variant, so weight 300,
+    // lineHeight 1.167 and the -0.01562em tracking stay stock. And
+    // responsiveFontSizes() still steps this down below lg, so 4rem is the
+    // size at ≥1200px, not at every width.
+    h1: { fontSize: '4rem' },
+
+    // Stock h2 is 3.75rem (60px) at weight 300 — a second display size, which
+    // this app has no use for: its only h2 is the screen title sitting in a row
+    // with the chart-mode buttons. 1.75rem (28px) puts it a step under h1
+    // instead of competing with it, and 500 is the heaviest loaded Inter face
+    // below bold, so it renders as a real face rather than a synthesized one.
+    //
+    // Set here rather than inline on the one call site, matching h1 above:
+    // size belongs to the scale, so the next h2 inherits it. lineHeight 1.2 and
+    // the -0.00833em tracking stay stock, and responsiveFontSizes() still steps
+    // this down below lg — 1.75rem is the size at ≥1200px.
+    h2: { fontSize: '1.75rem', fontWeight: 500 },
 
     // Stock `button` is textTransform: 'uppercase'. Turned off — uppercase is
     // slower to read (it strips word-shape cues), and screen readers can spell
