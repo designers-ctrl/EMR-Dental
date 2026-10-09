@@ -24,7 +24,7 @@ import {
   type PerioToothReading,
   type Tooth,
 } from '../data/patientChart.ts'
-import { ARCH_BOUNDS, toothModelByFdi, type ToothModel } from '../data/toothModels.ts'
+import { toothModelByFdi, type ToothModel } from '../data/toothModels.ts'
 import {
   pocketGeometry,
   ringPoints,
@@ -32,6 +32,7 @@ import {
   useToothGeometries,
   type GingivalRing,
 } from './toothScene.ts'
+import { facialDirection } from './perioSites.ts'
 
 /**
  * The periodontal layer — what the "Perio Chart" tab adds ON TOP of the arch.
@@ -85,29 +86,7 @@ const SIDE_FEATHER = 0.14
 const FILL_OPACITY = 0.34
 const EDGE_OPACITY = 0.85
 
-/** Middle of the dentition — the same figure the arch frames itself from. */
-const CENTRE = ARCH_BOUNDS.min.map((low, axis) => (low + ARCH_BOUNDS.max[axis]) / 2)
-
-/**
- * Which way is out of the mouth for one tooth, in that tooth's own axes.
- *
- * The export squares every tooth up with its mesiodistal width on local X and
- * its buccolingual depth on local Z, so the facial direction is local ±Z — the
- * only open question is the sign. That is settled by turning local +Z into the
- * jaw's space and asking whether it points away from the middle of the arch.
- * Deriving the sign this way rather than tabulating it per quadrant means a
- * re-export that flips a tooth cannot silently paint the tongue side.
- */
-function facialDirection(model: ToothModel): Vector3 {
-  const outward = new Vector3(
-    model.archPosition[0] - CENTRE[0],
-    0,
-    model.archPosition[2] - CENTRE[2],
-  ).normalize()
-
-  const localZ = new Vector3(0, 0, 1).applyQuaternion(new Quaternion(...model.archRotation))
-  return new Vector3(0, 0, localZ.dot(outward) < 0 ? -1 : 1)
-}
+// `facialDirection` lives in `perioSites.ts`, shared with the site marker.
 
 /** Puts a tooth-local geometry back where that tooth sits in the jaw. */
 function seat(model: ToothModel): Matrix4 {

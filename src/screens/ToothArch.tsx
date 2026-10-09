@@ -1,8 +1,27 @@
-import { Suspense, useEffect, useMemo, useRef, type RefObject } from 'react'
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type RefObject,
+  type SetStateAction,
+} from 'react'
 import { Canvas, invalidate, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { MOUSE, NeutralToneMapping, type PerspectiveCamera, Quaternion, Vector3 } from 'three'
+import {
+  BackSide,
+  MeshBasicMaterial,
+  MOUSE,
+  NeutralToneMapping,
+  type PerspectiveCamera,
+  Quaternion,
+  Vector3,
+} from 'three'
 import Box from '@mui/material/Box'
+import Tooltip from '@mui/material/Tooltip'
+import { useTheme } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
 
 import {
@@ -18,6 +37,7 @@ import {
   type EndoChart,
   type ImplantChart,
   type PerioChart,
+  type PerioSite,
   type PerioToothReading,
   type PostCoreChart,
   type Tooth,
@@ -33,10 +53,13 @@ import {
   enamel,
   pocketGeometry,
   pulpWindowEnamel,
+  ringHeightAt,
+  ringRadiusAt,
   useGingivalRings,
   useToothGeometries,
 } from './toothScene.ts'
 import { Studio } from './ToothStudio.tsx'
+import { ringAngle, seatSite, siteDirection } from './perioSites.ts'
 
 /**
  * The dentition as it actually sits in the jaw — the whole odontogram.
@@ -259,6 +282,108 @@ function focusPose(camera: PerspectiveCamera, fdi: number, distance: number) {
   return { target, position: target.clone().addScaledVector(outward, distance) }
 }
 
+// ─── PROBING SITE ─────────────────────────────────────────────────────────
+
+/** Where the camera looks at a probing site from: a point, and the way back out from it. */
+interface SiteFocus {
+  target: Vector3
+  direction: Vector3
+}
+
+/** The marker's dot and its white halo, metres. ~1 mm across, so it reads on any tooth. */
+const SITE_DOT = 0.00048
+const SITE_HALO = 0.00078
+
+/** How far out from the margin the dot's centre sits, so it rides on the gum line. */
+const SITE_SWELL = 0.00022
+
+/**
+ * The selected probing site, as a dot on the tooth's gum line — and the camera
+ * pose that looks straight at it.
+ *
+ * The point is read off the tooth's own gingival ring (the CEJ traced from the
+ * mesh), at the site's angle round the long axis, then moved apically by that
+ * site's recorded recession — the same shift the red margin line makes — so
+ * the dot sits on the line the chart draws, not on a guess of it.
+ *
+ * Reports its pose up rather than steering the camera itself: the orbit lives
+ * outside the Suspense boundary the rings load under.
+ */
+function SiteMarker({
+  fdi,
+  site,
+  recession,
+  onFocus,
+}: {
+  fdi: number
+  site: PerioSite
+  /** Millimetres, at this site. Positive is apical, as the dataset records it. */
+  recession: number
+  onFocus: (focus: SiteFocus | null) => void
+}) {
+  const rings = useGingivalRings()
+  const theme = useTheme()
+  const model = toothModelByFdi[fdi]
+  const ring = rings.get(model.node)
+
+  const pose = useMemo(() => {
+    if (!ring) return null
+    const direction = siteDirection(model, site)
+    const angle = ringAngle(direction)
+    const radius = ringRadiusAt(ring, angle) + SITE_SWELL
+    const axis = model.arch === 'upper' ? 1 : -1
+    const local = new Vector3(
+      direction.x * radius,
+      ringHeightAt(ring, angle) + axis * recession * 0.001,
+      direction.z * radius,
+    )
+    return seatSite(model, local, direction)
+  }, [ring, model, site, recession])
+
+  useEffect(() => {
+    if (!pose) {
+      onFocus(null)
+      return
+    }
+    // Look back along the site's own outward direction, with the same small
+    // lift every focused view has — on both aspects. Steeper views of the
+    // tongue side (from above or below) were tried and read worse.
+    const direction = pose.outward.clone().setY(0).normalize().setY(FOCUS_LIFT).normalize()
+    onFocus({ target: pose.point, direction })
+    return () => onFocus(null)
+  }, [pose, onFocus])
+
+  // Brand dot with a white halo drawn from its BACK faces, so it reads as an
+  // outlined point against enamel and gum alike. Unlit: a marker, not a material.
+  const dot = useMemo(
+    () => new MeshBasicMaterial({ color: theme.palette.primary.main, toneMapped: false }),
+    [theme.palette.primary.main],
+  )
+  const halo = useMemo(
+    () => new MeshBasicMaterial({ color: '#ffffff', side: BackSide, toneMapped: false }),
+    [],
+  )
+  useEffect(
+    () => () => {
+      dot.dispose()
+      halo.dispose()
+    },
+    [dot, halo],
+  )
+
+  if (!pose) return null
+  return (
+    <group position={pose.point} renderOrder={10}>
+      <mesh material={halo} raycast={() => null}>
+        <sphereGeometry args={[SITE_HALO, 24, 16]} />
+      </mesh>
+      <mesh material={dot} raycast={() => null}>
+        <sphereGeometry args={[SITE_DOT, 24, 16]} />
+      </mesh>
+    </group>
+  )
+}
+
 /**
  * Mouse-driven orbit.
  *
@@ -271,10 +396,16 @@ function focusPose(camera: PerspectiveCamera, fdi: number, distance: number) {
 function Orbit({
   zoom,
   focusFdi,
+  focusSite,
   viewDirection,
 }: {
   zoom: number
   focusFdi: number | null
+  /**
+   * A probing site on the open tooth to look straight at, or `null` for the
+   * tooth's usual facial view. Wins over `focusFdi`'s own framing when set.
+   */
+  focusSite: SiteFocus | null
   /** Where the View menu is pointing the camera, in the arch's own axes. */
   viewDirection: readonly [number, number, number]
 }) {
@@ -410,10 +541,20 @@ function Orbit({
    * different model to be re-introduced.
    */
   const settled = useRef(false)
+  /** What the last flight was ordered for, to tell a site being let go from a move. */
+  const last = useRef<{ fdi: number | null; site: SiteFocus | null }>({ fdi: null, site: null })
 
   useEffect(() => {
     const orbit = controls.current
     if (!orbit || framedDistance.current === 0) return
+
+    // A site let go of while the SAME tooth stays open — the perio tab swapped
+    // for another — is not a request to move: a tab change leaves the 3D
+    // exactly where it is (see above).
+    const releasedOnly =
+      focusSite === null && last.current.site !== null && focusFdi === last.current.fdi
+    last.current = { fdi: focusFdi, site: focusSite }
+    if (releasedOnly) return
 
     // The opening view is already on screen at mount; animating to where the
     // camera already stands would just burn a frame budget on nothing.
@@ -429,7 +570,14 @@ function Orbit({
             framedDistance.current,
             new Vector3(...viewDirection).normalize(),
           )
-        : focusPose(camera as PerspectiveCamera, focusFdi, framedDistance.current * zoom)
+        : focusSite
+          ? {
+              target: focusSite.target.clone(),
+              position: focusSite.target
+                .clone()
+                .addScaledVector(focusSite.direction, framedDistance.current * zoom),
+            }
+          : focusPose(camera as PerspectiveCamera, focusFdi, framedDistance.current * zoom)
 
     /*
      * Stored as a ROTATION rather than a pair of endpoints.
@@ -456,7 +604,7 @@ function Orbit({
       startedAt: performance.now(),
     }
     invalidate()
-  }, [camera, zoom, focusFdi, viewDirection])
+  }, [camera, zoom, focusFdi, focusSite, viewDirection])
 
   useFrame(() => {
     const orbit = controls.current
@@ -519,6 +667,8 @@ function Arch({
   postCore,
   show,
   onSelect,
+  hoveredFdi,
+  onHover,
 }: {
   teeth: Tooth[]
   selectedFdi: number | null
@@ -530,8 +680,35 @@ function Arch({
   postCore: PostCoreChart
   show: ChartLayerVisibility
   onSelect: (fdi: number | null) => void
+  hoveredFdi: number | null
+  onHover: Dispatch<SetStateAction<number | null>>
 }) {
   const geometries = useToothGeometries()
+  const theme = useTheme()
+  /*
+   * The hover highlight: a translucent wash of the brand colour laid over the
+   * tooth's own surface, rather than a change to its enamel material. The
+   * enamel materials are cached per status (see `enamel()`), so tinting one
+   * would tint every tooth sharing it. `polygonOffset` pulls the wash a hair
+   * towards the camera so it wins the depth test against the tooth beneath.
+   *
+   * Read from `theme.palette` because WebGL needs a resolved colour, not a CSS
+   * variable — light scheme only, like the rest of the scene's paint.
+   */
+  const hoverWash = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: theme.palette.primary.main,
+        transparent: true,
+        opacity: 0.22,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
+      }),
+    [theme.palette.primary.main],
+  )
+  useEffect(() => () => hoverWash.dispose(), [hoverWash])
   const rings = useGingivalRings()
   const fixtures = useMemo(() => implantsByFdi(implants), [implants])
   const canals = useMemo(() => (endo ? endoByFdi(endo) : null), [endo])
@@ -579,31 +756,45 @@ function Arch({
           ((show.rootCanals && canals?.has(tooth.fdi) === true) ||
             (show.postCore && posted?.has(tooth.fdi) === true))
 
+        const shape = implanted && ring ? pocketGeometry(geometry, ring) : geometry
+
         return (
-          <mesh
-            key={tooth.fdi}
-            geometry={implanted && ring ? pocketGeometry(geometry, ring) : geometry}
-            position={model.archPosition}
-            quaternion={model.archRotation}
-            material={
-              implanted
-                ? crownOnlyEnamel(tooth.status, dimmed, axis)
-                : glass
-                  ? pulpWindowEnamel(tooth.status, dimmed)
-                  : enamel(tooth.status, dimmed)
-            }
-            onClick={(event) => {
-              event.stopPropagation()
-              onSelect(selectedFdi === tooth.fdi ? null : tooth.fdi)
-            }}
-            onPointerOver={(event) => {
-              event.stopPropagation()
-              document.body.style.cursor = 'pointer'
-            }}
-            onPointerOut={() => {
-              document.body.style.cursor = ''
-            }}
-          />
+          <group key={tooth.fdi}>
+            <mesh
+              geometry={shape}
+              position={model.archPosition}
+              quaternion={model.archRotation}
+              material={
+                implanted
+                  ? crownOnlyEnamel(tooth.status, dimmed, axis)
+                  : glass
+                    ? pulpWindowEnamel(tooth.status, dimmed)
+                    : enamel(tooth.status, dimmed)
+              }
+              onClick={(event) => {
+                event.stopPropagation()
+                onSelect(selectedFdi === tooth.fdi ? null : tooth.fdi)
+              }}
+              onPointerOver={(event) => {
+                event.stopPropagation()
+                onHover(tooth.fdi)
+              }}
+              // Only clears if THIS tooth is still the hovered one — moving
+              // straight onto a neighbour fires its `over` before this `out`.
+              onPointerOut={() => onHover((current) => (current === tooth.fdi ? null : current))}
+            />
+            {hoveredFdi === tooth.fdi && (
+              <mesh
+                geometry={shape}
+                position={model.archPosition}
+                quaternion={model.archRotation}
+                material={hoverWash}
+                // Never a raycast target of its own, or it would steal the
+                // pointer from the tooth it sits on and flicker the hover.
+                raycast={() => null}
+              />
+            )}
+          </group>
         )
       })}
 
@@ -932,6 +1123,7 @@ export function ToothArch3D({
   postCore,
   zoom = 1,
   focusFdi = null,
+  focusSite = null,
   viewDirection,
   show,
   onSelect,
@@ -957,6 +1149,11 @@ export function ToothArch3D({
    * Set while a tooth is open for charting.
    */
   focusFdi?: number | null
+  /**
+   * The probing site picked in the perio panel, on the `focusFdi` tooth. Marked
+   * on the gum line, and the camera turns to face it.
+   */
+  focusSite?: PerioSite | null
   /** Where the View menu is pointing the camera, in the arch's own axes. */
   viewDirection: readonly [number, number, number]
   /** Which marks to draw, already resolved from the Chart Layers menu. */
@@ -964,6 +1161,31 @@ export function ToothArch3D({
   onSelect: (fdi: number | null) => void
 }) {
   const labels = useRef<Map<number, HTMLElement>>(new Map())
+  // Where the site marker says the camera should look; see `SiteMarker`.
+  const [siteFocus, setSiteFocus] = useState<SiteFocus | null>(null)
+  const [hoveredFdi, setHoveredFdi] = useState<number | null>(null)
+  const [dragging, setDragging] = useState(false)
+
+  // A drag can end anywhere — off the canvas, over a menu — so the release is
+  // listened for on the window, not on the canvas that saw it start.
+  useEffect(() => {
+    if (!dragging) return
+    const release = () => setDragging(false)
+    window.addEventListener('pointerup', release)
+    window.addEventListener('pointercancel', release)
+    return () => {
+      window.removeEventListener('pointerup', release)
+      window.removeEventListener('pointercancel', release)
+    }
+  }, [dragging])
+
+  /*
+   * One cursor, owned here. It used to be split — `grab` on the canvas and
+   * `pointer` written onto <body> by each tooth — and the canvas's own value
+   * always won, so the pointer never showed. Grabbing beats everything while
+   * a drag is live; otherwise a tooth under the pointer says "click me".
+   */
+  const cursor = dragging ? 'grabbing' : hoveredFdi !== null ? 'pointer' : 'grab'
 
   // The badges carry the readings as TEXT, beside the marks that carry them
   // as colour. That is the requirement, not a nicety: a probing depth shown
@@ -994,156 +1216,183 @@ export function ToothArch3D({
     [postCore, endo],
   )
 
+  // Names what a click will do, on the one chart where a tooth opens a record
+  // of its own: a tooth with a canal finding, on the endo tab. Hidden mid-drag,
+  // when the pointer is turning the arch rather than pointing at a tooth.
+  const hoverTip =
+    !dragging && endo && hoveredFdi !== null && canals?.has(hoveredFdi) ? endo.hoverLabel : ''
+
   return (
-    <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
-      <Canvas
-        frameloop="demand"
-        dpr={[1, 2]}
-        camera={{ fov: 32, near: 0.005, far: 5 }}
-        gl={{ antialias: true, alpha: true, toneMapping: NeutralToneMapping }}
-        // Clicking empty space clears the selection, the way the number row's
-        // second click does in the flat chart.
-        onPointerMissed={() => onSelect(null)}
-        style={{ display: 'block', cursor: 'grab' }}
-      >
-        <Studio />
-        <Suspense fallback={null}>
-          <Arch
-            teeth={teeth}
-            selectedFdi={selectedFdi}
-            perio={perio}
-            perioReadings={perioReadings}
-            caries={caries}
-            implants={implants}
-            endo={endo}
-            postCore={postCore}
-            show={show}
-            onSelect={onSelect}
-          />
-        </Suspense>
-        <Orbit zoom={zoom} focusFdi={focusFdi} viewDirection={viewDirection} />
-        {/* Skipped outright when labels are off — this projects 32 anchors on
-            every frame of a drag, and none of it is wanted if nothing shows. */}
-        {show.labels && <ToothNumbers teeth={teeth} selectedFdi={selectedFdi} nodes={labels} />}
-      </Canvas>
-
-      {/*
-        `aria-hidden` because these numbers add nothing a screen reader can
-        currently reach: the WebGL arch puts no teeth in the accessibility tree
-        at all, so announcing 32 bare digits would be noise rather than access.
-        The selected tooth is already announced by the aria-live caption beside
-        the canvas. Making the dentition keyboard-navigable is the real fix and
-        is a bigger job than labelling.
-      */}
+    <Tooltip title={hoverTip} open={hoverTip !== ''} followCursor describeChild disableInteractive>
       <Box
-        aria-hidden
-        sx={{
-          position: 'absolute',
-          inset: 0,
-          overflow: 'hidden',
-          // Numbers must never eat a drag meant for the model underneath.
-          pointerEvents: 'none',
-        }}
+        sx={{ position: 'relative', width: '100%', height: '100%' }}
+        onPointerDownCapture={() => setDragging(true)}
+        onPointerLeave={() => setHoveredFdi(null)}
       >
-        {show.labels &&
-          teeth.map((tooth) => {
-          const side = sideFromFdi(tooth.fdi)
-          // Laterality is carried by the CHANNEL, not by a hex, so both colour
-          // schemes stay contrast-checked and a rebrand moves it. The letter
-          // is what actually says which side — colour only reinforces it,
-          // because a tooth's side must never depend on seeing a hue.
-          const channel = side === 'R' ? 'info' : 'warning'
-          const selected = tooth.fdi === selectedFdi
-          const reading = readings?.get(tooth.fdi)
-          const lesion = lesions.get(tooth.fdi)
-          const fixture = fixtures.get(tooth.fdi)
-          const canal = canals?.get(tooth.fdi)
-          const post = posts?.get(tooth.fdi)
-
-          return (
-            <Box
-              key={tooth.fdi}
-              ref={(element: HTMLElement | null) => {
-                if (element) labels.current.set(tooth.fdi, element)
-                else labels.current.delete(tooth.fdi)
-              }}
-              sx={{
-                position: 'absolute',
-                left: 0,
-                top: 0,
-                display: 'flex',
-                // Children are [leader, badge]; reversing on the upper arch
-                // puts the badge outermost and the leader nearest its tooth.
-                flexDirection: tooth.arch === 'upper' ? 'column-reverse' : 'column',
-                alignItems: 'center',
-                gap: 0.25,
-                willChange: 'transform',
-              }}
-            >
-              <Box
-                component="span"
-                sx={{
-                  width: '1px',
-                  height: (theme) => theme.spacing(0.75),
-                  bgcolor: 'divider',
-                }}
+        <Canvas
+          frameloop="demand"
+          dpr={[1, 2]}
+          camera={{ fov: 32, near: 0.005, far: 5 }}
+          gl={{ antialias: true, alpha: true, toneMapping: NeutralToneMapping }}
+          // Clicking empty space clears the selection, the way the number row's
+          // second click does in the flat chart.
+          onPointerMissed={() => onSelect(null)}
+          style={{ display: 'block', cursor }}
+        >
+          <Studio />
+          <Suspense fallback={null}>
+            <Arch
+              teeth={teeth}
+              selectedFdi={selectedFdi}
+              perio={perio}
+              perioReadings={perioReadings}
+              caries={caries}
+              implants={implants}
+              endo={endo}
+              postCore={postCore}
+              show={show}
+              onSelect={onSelect}
+              hoveredFdi={hoveredFdi}
+              onHover={setHoveredFdi}
+            />
+            {focusFdi !== null && focusSite && (
+              <SiteMarker
+                fdi={focusFdi}
+                site={focusSite}
+                recession={readings?.get(focusFdi)?.sites[focusSite].recession ?? 0}
+                onFocus={setSiteFocus}
               />
-              <Typography
-                variant="caption"
-                component="span"
+            )}
+          </Suspense>
+          <Orbit
+            zoom={zoom}
+            focusFdi={focusFdi}
+            focusSite={focusSite ? siteFocus : null}
+            viewDirection={viewDirection}
+          />
+          {/* Skipped outright when labels are off — this projects 32 anchors on
+              every frame of a drag, and none of it is wanted if nothing shows. */}
+          {show.labels && <ToothNumbers teeth={teeth} selectedFdi={selectedFdi} nodes={labels} />}
+        </Canvas>
+
+        {/*
+          `aria-hidden` because these numbers add nothing a screen reader can
+          currently reach: the WebGL arch puts no teeth in the accessibility tree
+          at all, so announcing 32 bare digits would be noise rather than access.
+          The selected tooth is already announced by the aria-live caption beside
+          the canvas. Making the dentition keyboard-navigable is the real fix and
+          is a bigger job than labelling.
+        */}
+        <Box
+          aria-hidden
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            overflow: 'hidden',
+            // Numbers must never eat a drag meant for the model underneath.
+            pointerEvents: 'none',
+          }}
+        >
+          {show.labels &&
+            teeth.map((tooth) => {
+            const side = sideFromFdi(tooth.fdi)
+            // Laterality is carried by the CHANNEL, not by a hex, so both colour
+            // schemes stay contrast-checked and a rebrand moves it. The letter
+            // is what actually says which side — colour only reinforces it,
+            // because a tooth's side must never depend on seeing a hue.
+            const channel = side === 'R' ? 'info' : 'warning'
+            const selected = tooth.fdi === selectedFdi
+            const reading = readings?.get(tooth.fdi)
+            const lesion = lesions.get(tooth.fdi)
+            const fixture = fixtures.get(tooth.fdi)
+            const canal = canals?.get(tooth.fdi)
+            const post = posts?.get(tooth.fdi)
+
+            return (
+              <Box
+                key={tooth.fdi}
+                ref={(element: HTMLElement | null) => {
+                  if (element) labels.current.set(tooth.fdi, element)
+                  else labels.current.delete(tooth.fdi)
+                }}
                 sx={{
-                  display: 'inline-flex',
-                  alignItems: 'baseline',
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  display: 'flex',
+                  // Children are [leader, badge]; reversing on the upper arch
+                  // puts the badge outermost and the leader nearest its tooth.
+                  flexDirection: tooth.arch === 'upper' ? 'column-reverse' : 'column',
+                  alignItems: 'center',
                   gap: 0.25,
-                  px: 0.5,
-                  py: 0.125,
-                  borderRadius: 0.5,
-                  lineHeight: 1.4,
-                  // Digits share a width, so a turning arch doesn't make the
-                  // badges shimmer as they re-lay out.
-                  fontVariantNumeric: 'tabular-nums',
-                  fontWeight: selected ? 700 : 500,
-                  color: `${channel}.dark`,
-                  // `vars` rather than `alpha(palette…)`: under cssVariables the
-                  // palette object is frozen at the default scheme, so a tint
-                  // computed in JS would not follow a light/dark swap.
-                  bgcolor: (theme) =>
-                    `rgba(${theme.vars.palette[channel].mainChannel} / ${selected ? 0.34 : 0.16})`,
-                  outline: selected ? '2px solid' : 'none',
-                  outlineColor: `${channel}.main`,
-                  transition: (theme) =>
-                    theme.transitions.create(['background-color', 'outline-color']),
+                  willChange: 'transform',
                 }}
               >
-                {universalFromFdi(tooth.fdi)}
                 <Box
                   component="span"
                   sx={{
-                    // Relative to the badge's own size rather than a second
-                    // point on the type scale, so it tracks the caption
-                    // variant wherever that lands.
-                    fontSize: '0.8em',
-                    fontWeight: 400,
-                    opacity: 0.8,
+                    width: '1px',
+                    height: (theme) => theme.spacing(0.75),
+                    bgcolor: 'divider',
+                  }}
+                />
+                <Typography
+                  variant="caption"
+                  component="span"
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'baseline',
+                    gap: 0.25,
+                    px: 0.5,
+                    py: 0.125,
+                    borderRadius: 0.5,
+                    lineHeight: 1.4,
+                    // Digits share a width, so a turning arch doesn't make the
+                    // badges shimmer as they re-lay out.
+                    fontVariantNumeric: 'tabular-nums',
+                    fontWeight: selected ? 700 : 500,
+                    color: `${channel}.dark`,
+                    // `vars` rather than `alpha(palette…)`: under cssVariables the
+                    // palette object is frozen at the default scheme, so a tint
+                    // computed in JS would not follow a light/dark swap.
+                    bgcolor: (theme) =>
+                      `rgba(${theme.vars.palette[channel].mainChannel} / ${selected ? 0.34 : 0.16})`,
+                    outline: selected ? '2px solid' : 'none',
+                    outlineColor: `${channel}.main`,
+                    transition: (theme) =>
+                      theme.transitions.create(['background-color', 'outline-color']),
                   }}
                 >
-                  {side}
-                </Box>
-              </Typography>
+                  {universalFromFdi(tooth.fdi)}
+                  <Box
+                    component="span"
+                    sx={{
+                      // Relative to the badge's own size rather than a second
+                      // point on the type scale, so it tracks the caption
+                      // variant wherever that lands.
+                      fontSize: '0.8em',
+                      fontWeight: 400,
+                      opacity: 0.8,
+                    }}
+                  >
+                    {side}
+                  </Box>
+                </Typography>
 
-              {reading && perio && <DepthTag reading={reading} perio={perio} />}
+                {reading && perio && <DepthTag reading={reading} perio={perio} />}
 
-              {lesion && lesion.length > 0 && <CariesTag label={caries.badge} />}
+                {lesion && lesion.length > 0 && <CariesTag label={caries.badge} />}
 
-              {fixture && <ImplantTag label={implants.badge} />}
+                {fixture && <ImplantTag label={implants.badge} />}
 
-              {canal && endo && <EndoTag label={endo.badge} />}
+                {canal && endo && <EndoTag label={endo.badge} />}
 
-              {post && <PostCoreTag label={postCore.badge} />}
-            </Box>
-            )
-          })}
+                {post && <PostCoreTag label={postCore.badge} />}
+              </Box>
+              )
+            })}
+        </Box>
       </Box>
-    </Box>
+    </Tooltip>
   )
 }

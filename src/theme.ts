@@ -333,6 +333,18 @@ export const theme = responsiveFontSizes(createTheme({
   //   light array directly is honest about that; anything that toggles schemes
   //   passes `colors` explicitly. See `chartSeriesColors` above.
   components: {
+    // Scrollbars are hidden app-wide; scrolling itself is untouched — wheel,
+    // trackpad, touch and keyboard all still move every overflow container.
+    // Set on `*` because the scroll areas are many (rail list, side panel,
+    // drawers, menus) and none should grow a bar of its own.
+    // ⚠ A hidden bar no longer hints that a region scrolls; a region whose
+    //   overflow is easy to miss needs its own cue (a fade, a clipped row).
+    MuiCssBaseline: {
+      styleOverrides: {
+        '*': { scrollbarWidth: 'none' },
+        '*::-webkit-scrollbar': { display: 'none' },
+      },
+    },
     MuiChartsDataProvider: {
       defaultProps: {
         colors: CHART_SERIES_LIGHT,

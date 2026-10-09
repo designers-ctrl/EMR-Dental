@@ -38,6 +38,10 @@ export type IconName =
   | 'newForm'
   | 'message'
   | 'call'
+  // patient demographics
+  | 'sexFemale'
+  | 'sexMale'
+  // patient demographics
   // patient tabs
   | 'general'
   | 'photos'
@@ -70,9 +74,8 @@ export type IconName =
   | 'dropdown'
   // perio tooth panel
   | 'close'
+  | 'previousTooth'
   | 'nextTooth'
-  | 'scrollUp'
-  | 'scrollDown'
 
 // ─── APP RAIL ─────────────────────────────────────────────────────────────
 
@@ -98,7 +101,7 @@ export interface AppRail {
 
 // ─── PATIENT HEADER ───────────────────────────────────────────────────────
 
-/** `accent` renders as a call-to-action — e.g. an unscheduled next visit. */
+/** `accent` renders as a link-style call to action — e.g. an unscheduled next visit. */
 export type FieldTone = 'default' | 'accent'
 
 export interface PatientField {
@@ -121,7 +124,9 @@ export interface PatientTab {
   label: string
   icon: IconName
   /**
-   * Whether the sidebar shows it outright. The rest collapse under "More".
+   * Whether the practice ranks it first. The sidebar lists `primary` tabs
+   * ahead of the rest; how many show before the "More" toggle is decided by
+   * the space available, not by this flag.
    *
    * A record has seventeen sections and a sidebar has room for a handful, so
    * the split is DATA rather than a slice taken in the view — which section a
@@ -140,9 +145,17 @@ export interface PatientTab {
 }
 
 export interface Patient {
-  /** Human-facing chart number, shown above the name. */
-  chartNumber: string
   name: string
+  /** Record identifier, shown under the name as `<idLabel> <id>`. */
+  id: string
+  idLabel: string
+  /**
+   * As recorded on the chart; shown in full beside the date of birth, with
+   * `icon` after the word as a decorative glyph.
+   */
+  sex: { label: string; icon: IconName }
+  /** Names the bare date on hover — it is shown without a caption. */
+  dateOfBirthLabel: string
   /**
    * Portrait on file, as a resolved URL. A real backend supplies one; here it
    * comes from a Vite asset import. Omitted when there is no photo.
@@ -150,7 +163,9 @@ export interface Patient {
   photo?: string
   /** Initials stand in for the photo until one is uploaded. */
   initials: string
+  /** Shown as a small badge beside the ID — text, not colour. */
   status: string
+  /** MM.DD.YY, as the record writes it. */
   dateOfBirth: string
   /** Rendered as three two-row columns, in this order. */
   fields: PatientField[]
@@ -162,8 +177,10 @@ export interface Patient {
    * rather than in the view so the sentence changes without touching markup.
    */
   unavailableTabHint: string
-  /** Opens the sections the sidebar did not have room for. */
+  /** The floating toggle that expands the list in place with the sections it had no room for. */
   moreLabel: string
+  /** Collapses them again. */
+  lessLabel: string
   /**
    * The trail above the navigation — a way back to the list this record was
    * opened from. Only the parent is named: the leaf is the patient's own name,
@@ -414,10 +431,31 @@ export interface PerioMeasure {
   overflow?: { value: number; label: string }
 }
 
+/** One way of handling the 3D arch, e.g. drag → rotate. */
+export interface ChartGesture {
+  id: string
+  /** The input, e.g. "Right-drag". */
+  gesture: string
+  /** Its effect as a short verb, for the one-line first-visit tip. */
+  short: string
+  /** Its effect in full, for the help popover. */
+  action: string
+}
+
+export interface ChartHelp {
+  title: string
+  /** In order; the last is the tooth click, which a chart tab may re-word. */
+  gestures: ChartGesture[]
+  /** Heading of the one-time tip. */
+  tipTitle: string
+  /** Names the tip's close button. */
+  dismissLabel: string
+}
+
 export interface PerioChart {
   /** Stated on screen — see the warning above. */
   disclaimer: string
-  /** Replaces the odontogram's hint while this layer is up. */
+  /** What clicking a tooth does while this layer is up — the last row of the chart help. */
   hint: string
   /** Probing depth at or above which a site reads as disease, in `unit`. */
   flagDepth: number
@@ -437,8 +475,28 @@ export interface PerioChart {
   panel: {
     titlePrefix: string
     close: string
+    previousTooth: string
     nextTooth: string
+    /** Commits the tooth's edits; nothing reaches the chart until then. */
+    save: string
+    /**
+     * The guard shown when leaving a tooth with unsaved edits — by Previous,
+     * Next, the rail, closing, or anything else that changes the selection.
+     * `{tooth}` in `body` is replaced with the tooth's name.
+     */
+    unsaved: {
+      title: string
+      body: string
+      keepEditing: string
+      discard: string
+      saveAndContinue: string
+    }
     toothRail: string
+    /**
+     * Ends the panel's summary line when the site in hand has none of the four
+     * conditions marked. States what was RECORDED, not that the site is well.
+     */
+    noConditions: string
     /** Shown when the tooth has no readings at all — never probed. */
     unprobedTitle: string
     unprobedBody: string
@@ -652,8 +710,10 @@ export interface EndoFinding {
 export interface EndoChart {
   /** Stated on screen — see the warning above. */
   disclaimer: string
-  /** Replaces the arch hint while this tab is up. */
+  /** What clicking a tooth does while this tab is up — the last row of the chart help. */
   hint: string
+  /** Tooltip over a tooth that has a canal record, while this tab is up. */
+  hoverLabel: string
   /** Rows added to the legend beside the arch. */
   legend: PerioLegendItem[]
   /** Short text on the tooth badge, so the finding is never colour alone. */
@@ -951,8 +1011,12 @@ export interface Odontogram {
   activeArchView: ArchView
   /** Copy for the 3D arch, which is the whole odontogram. */
   model: {
-    /** Shown under the arch until a tooth is picked. */
-    hint: string
+    /**
+     * How to drive the 3D arch. Lives behind the "?" corner button rather than
+     * on a permanent line under the model, and is offered once, dismissibly,
+     * on a first visit.
+     */
+    help: ChartHelp
     /** Prefixes the tooth number once one is. */
     toothLabel: string
     /** Category named when a tooth is selected — singular, one tooth is named. */
@@ -987,6 +1051,8 @@ export interface Odontogram {
   implants: ImplantChart
   /** Corner affordances, bottom-left and bottom-right of the chart panel. */
   footerActions: { start: RailItem; end: RailItem }
+  /** The legend's own heading, and its collapse toggle's two names. */
+  legend: { title: string; hideLabel: string; showLabel: string }
 }
 
 // ─── THE SCREEN ───────────────────────────────────────────────────────────
@@ -1038,12 +1104,16 @@ export const patientChart: PatientChartScreen = {
   },
 
   patient: {
-    chartNumber: '#P6L272',
     name: 'Julia Smith',
     // Stock portrait standing in for a patient photo — not a real patient.
     // Clearing this line drops the header back to the initials tile.
     photo: patientPhoto,
     initials: 'JS',
+    // Synthetic record ID — a placeholder, not a real identifier format.
+    id: '5340872',
+    idLabel: 'ID',
+    sex: { label: 'Female', icon: 'sexFemale' },
+    dateOfBirthLabel: 'Date of birth',
     status: 'Active',
     dateOfBirth: '01.28.94',
     fields: [
@@ -1082,6 +1152,7 @@ export const patientChart: PatientChartScreen = {
     activeTabId: 'charts',
     unavailableTabHint: 'Not built yet',
     moreLabel: 'More',
+    lessLabel: 'Show less',
     breadcrumb: { parent: 'Patients' },
     /*
      * Four sections sit in the sidebar and the other thirteen fold under
@@ -1242,12 +1313,26 @@ export const patientChart: PatientChartScreen = {
       { id: 'dental', label: 'Dental', enabled: true },
       { id: 'perio', label: 'Perio Chart', enabled: true },
       { id: 'endo', label: 'Endo Chart', enabled: true },
-      { id: 'all', label: 'All', icon: 'hidden', enabled: false },
     ],
     archViews: ['upper', 'both', 'lower'],
     activeArchView: 'both',
     model: {
-      hint: 'Drag to rotate · right-drag to move · scroll to zoom · click a tooth to select',
+      help: {
+        title: 'Getting around the 3D chart',
+        gestures: [
+          { id: 'rotate', gesture: 'Drag', short: 'rotate', action: 'Rotate the arch' },
+          { id: 'move', gesture: 'Right-drag', short: 'move', action: 'Move the arch' },
+          { id: 'zoom', gesture: 'Scroll', short: 'zoom', action: 'Zoom in and out' },
+          {
+            id: 'select',
+            gesture: 'Click a tooth',
+            short: 'select it',
+            action: 'Select it and show its findings',
+          },
+        ],
+        tipTitle: 'Getting around',
+        dismissLabel: 'Dismiss tip',
+      },
       toothLabel: 'Tooth',
       typeLabels: {
         molar: 'Molar',
@@ -1258,7 +1343,7 @@ export const patientChart: PatientChartScreen = {
     },
     perio: {
       disclaimer: 'Sample readings — not a signed periodontal exam',
-      hint: 'Perio layer on · drag to rotate · right-drag to move · click a tooth for its readings',
+      hint: 'Open its probing readings',
       flagDepth: 4,
       unit: 'mm',
       legend: [
@@ -1327,8 +1412,18 @@ export const patientChart: PatientChartScreen = {
       panel: {
         titlePrefix: 'Tooth',
         close: 'Close tooth details',
-        nextTooth: 'Next tooth',
+        previousTooth: 'Previous',
+        nextTooth: 'Next',
+        save: 'Save',
+        unsaved: {
+          title: 'Save changes?',
+          body: '{tooth} has readings that are not saved yet. Leaving now will lose them.',
+          keepEditing: 'Keep editing',
+          discard: 'Discard',
+          saveAndContinue: 'Save and continue',
+        },
         toothRail: 'Select a tooth',
+        noConditions: 'No conditions marked',
         unprobedTitle: 'Not yet probed',
         unprobedBody:
           'No periodontal readings have been recorded for this tooth in the current exam.',
@@ -1453,7 +1548,8 @@ export const patientChart: PatientChartScreen = {
     },
     endo: {
       disclaimer: 'Sample findings — canal paths are diagrammatic, not radiographic',
-      hint: 'Endo layer on · drag to rotate · right-drag to move · click a tooth for its canal record',
+      hint: 'View its canal record',
+      hoverLabel: 'View canal record',
       badge: 'Root canal',
       title: 'Root canal',
       legend: [
@@ -1624,9 +1720,11 @@ export const patientChart: PatientChartScreen = {
         },
       ],
     },
+    legend: { title: 'Legend', hideLabel: 'Hide legend', showLabel: 'Show legend' },
     footerActions: {
       start: { id: 'chart-history', label: 'Chart history', icon: 'history' },
       end: { id: 'chart-help', label: 'Charting help', icon: 'help' },
     },
   },
 }
+

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import AlertTitle from '@mui/material/AlertTitle'
 import Box from '@mui/material/Box'
@@ -6,9 +6,16 @@ import Breadcrumbs from '@mui/material/Breadcrumbs'
 import Button from '@mui/material/Button'
 import ButtonBase from '@mui/material/ButtonBase'
 import Checkbox from '@mui/material/Checkbox'
+import Chip from '@mui/material/Chip'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import DialogContentText from '@mui/material/DialogContentText'
+import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
+import Link from '@mui/material/Link'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
 import Menu from '@mui/material/Menu'
@@ -32,6 +39,7 @@ import CachedOutlined from '@mui/icons-material/CachedOutlined'
 import CalendarMonthOutlined from '@mui/icons-material/CalendarMonthOutlined'
 import CallOutlined from '@mui/icons-material/CallOutlined'
 import CheckBoxOutlined from '@mui/icons-material/CheckBoxOutlined'
+import ChevronLeftOutlined from '@mui/icons-material/ChevronLeftOutlined'
 import ChevronRightOutlined from '@mui/icons-material/ChevronRightOutlined'
 import CloseOutlined from '@mui/icons-material/CloseOutlined'
 import ContactMailOutlined from '@mui/icons-material/ContactMailOutlined'
@@ -41,8 +49,8 @@ import CreditCardOutlined from '@mui/icons-material/CreditCardOutlined'
 import DescriptionOutlined from '@mui/icons-material/DescriptionOutlined'
 import DynamicFormOutlined from '@mui/icons-material/DynamicFormOutlined'
 import EditNoteOutlined from '@mui/icons-material/EditNoteOutlined'
-import ExpandLessOutlined from '@mui/icons-material/ExpandLessOutlined'
 import ExpandMoreOutlined from '@mui/icons-material/ExpandMoreOutlined'
+import FemaleOutlined from '@mui/icons-material/FemaleOutlined'
 import ForwardToInboxOutlined from '@mui/icons-material/ForwardToInboxOutlined'
 import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined'
 import HelpOutlined from '@mui/icons-material/HelpOutlined'
@@ -51,6 +59,7 @@ import HistoryOutlined from '@mui/icons-material/HistoryOutlined'
 import HubOutlined from '@mui/icons-material/HubOutlined'
 import KeyboardTabOutlined from '@mui/icons-material/KeyboardTabOutlined'
 import LibraryBooksOutlined from '@mui/icons-material/LibraryBooksOutlined'
+import MaleOutlined from '@mui/icons-material/MaleOutlined'
 import MedicationOutlined from '@mui/icons-material/MedicationOutlined'
 import MoreHorizOutlined from '@mui/icons-material/MoreHorizOutlined'
 import MenuBookOutlined from '@mui/icons-material/MenuBookOutlined'
@@ -89,6 +98,7 @@ import {
   type ArchView,
   type CariesChart,
   type CariesFinding,
+  type ChartHelp,
   type ChartLayerId,
   type ChartLayers,
   type ChartLayerSwatch,
@@ -100,6 +110,7 @@ import {
   type ImplantChart,
   type ImplantFixture,
   type PatientField,
+  type PatientTab,
   type PerioChart,
   type PerioCondition,
   type PerioMeasure,
@@ -135,6 +146,8 @@ const ICONS: Record<IconName, SvgIconComponent> = {
   newForm: PostAddOutlined,
   message: ForwardToInboxOutlined,
   call: CallOutlined,
+  sexFemale: FemaleOutlined,
+  sexMale: MaleOutlined,
   general: PersonOutlined,
   photos: PhotoOutlined,
   charts: BarChartOutlined,
@@ -156,9 +169,8 @@ const ICONS: Record<IconName, SvgIconComponent> = {
   history: HistoryOutlined,
   help: HelpOutlined,
   close: CloseOutlined,
+  previousTooth: ChevronLeftOutlined,
   nextTooth: ChevronRightOutlined,
-  scrollUp: ExpandLessOutlined,
-  scrollDown: ExpandMoreOutlined,
   back: ArrowBackOutlined,
   more: MoreHorizOutlined,
   layers: LayersOutlined,
@@ -312,21 +324,140 @@ const SELECTED_TAB_SX = (theme: Theme) => {
  * are looking at. Identity sits under navigation rather than over it because
  * it is the thing that does not change while they work.
  */
+/**
+ * Space kept under the EXPANDED tab list so the floating toggle never covers
+ * the last row, in spacing units — the toggle's height plus its inset.
+ */
+const TOGGLE_BAND = 9
+
 function PatientSidebar() {
   const { patient } = patientChart
   const [activeTabId, setActiveTabId] = useState(patient.activeTabId)
-  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
 
-  const primaryTabs = patient.tabs.filter((tab) => tab.primary)
-  const overflowTabs = patient.tabs.filter((tab) => !tab.primary)
+  // Every section in one list, the practice's chosen ones (`primary`) first.
+  // How many of them show at rest is decided by the space, not the data.
+  const orderedTabs = [
+    ...patient.tabs.filter((tab) => tab.primary),
+    ...patient.tabs.filter((tab) => !tab.primary),
+  ]
+  const [showAll, setShowAll] = useState(false)
+  /** How many whole rows fit the tab region at rest. Measured, see below. */
+  const [fitCount, setFitCount] = useState(orderedTabs.length)
+  const tabListId = useId()
+  const scroller = useRef<HTMLDivElement>(null)
+
+  // Count the rows that fit: the nav region's height, less its top padding,
+  // over one row's height (including its margin). The floating toggle does NOT
+  // reserve a band at rest — it sits over the bottom of the list, covering part
+  // of the last row if it must, so the region stays full rather than ending in
+  // a gap. Re-measured on every resize, so a taller window shows more tabs.
+  useLayoutEffect(() => {
+    const el = scroller.current
+    if (!el) return
+    const measure = () => {
+      const row = el.querySelector<HTMLElement>('[data-tab-row]')
+      if (!row) return
+      const rowHeight =
+        row.getBoundingClientRect().height + parseFloat(getComputedStyle(row).marginBottom)
+      const top = parseFloat(getComputedStyle(el).paddingTop)
+      const fits = Math.floor((el.clientHeight - top) / rowHeight)
+      setFitCount(Math.max(1, Math.min(fits, orderedTabs.length)))
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [orderedTabs.length])
+
+  const overflows = fitCount < orderedTabs.length
+  // At rest, the rows that fit — with the active section swapped into the last
+  // slot if it sits below the fold, so the current place is never hidden.
+  const restingTabs = (() => {
+    const head = orderedTabs.slice(0, fitCount)
+    if (head.some((tab) => tab.id === activeTabId)) return head
+    const active = orderedTabs.find((tab) => tab.id === activeTabId)
+    return active ? [...head.slice(0, -1), active] : head
+  })()
+  const shownTabs = showAll || !overflows ? orderedTabs : restingTabs
+
+  // Expanding scrolls the region to the first newly revealed row; collapsing
+  // returns it to the top. Only the tab region scrolls — the patient block
+  // above it stays put.
+  useEffect(() => {
+    const el = scroller.current
+    if (!el) return
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const behavior = reduceMotion ? 'auto' : 'smooth'
+    if (!showAll) {
+      el.scrollTo({ top: 0 })
+      return
+    }
+    const first = el.querySelector<HTMLElement>(`[data-tab-index="${fitCount}"]`)
+    if (!first) return
+    const top = parseFloat(getComputedStyle(el).paddingTop)
+    const offset = first.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop
+    el.scrollTo({ top: offset - top, behavior })
+    // Scroll only on the toggle, not when a resize changes `fitCount`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAll])
+
   const [primaryAction, ...iconActions] = [
     ...patient.actions.filter((action) => action.primary),
     ...patient.actions.filter((action) => !action.primary),
   ]
 
-  // A section chosen from "More" is still the active one, so the sidebar has
-  // to be able to show a tab it does not itself list.
-  const activeInOverflow = overflowTabs.some((tab) => tab.id === activeTabId)
+  const renderTab = (tab: PatientTab) => {
+    const active = tab.id === activeTabId
+    return (
+      <Tooltip
+        key={tab.id}
+        title={tab.available ? '' : patient.unavailableTabHint}
+        placement="right"
+        disableInteractive
+      >
+        {/* Unbuilt sections keep their button semantics and stay in the tab
+            order — a keyboard user can reach them and hear the hint — but
+            carry no handler, so Enter/Space and a click both do nothing.
+            `aria-disabled` rather than `disabled` is deliberate: `disabled`
+            drops the element from the tab order and kills the hover the
+            tooltip hangs off. */}
+        <Box>
+          <ListItemButton
+            data-tab-row
+            data-tab-index={orderedTabs.indexOf(tab)}
+            selected={active}
+            onClick={tab.available ? () => setActiveTabId(tab.id) : undefined}
+            aria-current={active ? 'page' : undefined}
+            aria-disabled={tab.available ? undefined : true}
+            disableRipple={!tab.available}
+            sx={[
+              {
+                borderRadius: 1.5,
+                mb: 0.5,
+                // Roomier than a stock list row: these are the record's
+                // top-level destinations, not items in a long list.
+                px: 2,
+                py: 1.5,
+                gap: 1.5,
+                color: 'text.secondary',
+                cursor: tab.available ? 'pointer' : 'default',
+              },
+              // The same gradient tile the horizontal band used, kept so the
+              // selected section reads identically after the move. `&&`
+              // out-specifies MUI's own `.Mui-selected` rule, which would
+              // otherwise paint its tint over the gradient.
+              active && ((theme: Theme) => ({ '&&': SELECTED_TAB_SX(theme) })),
+            ]}
+          >
+            <Icon name={tab.icon} size={20} />
+            <Typography variant="body2" sx={{ fontWeight: active ? 600 : 400 }}>
+              {tab.label}
+            </Typography>
+          </ListItemButton>
+        </Box>
+      </Tooltip>
+    )
+  }
 
   return (
     <Paper
@@ -339,15 +470,19 @@ function PatientSidebar() {
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
-        overflowY: 'auto',
+        // The sidebar itself never scrolls: the patient block is fixed and
+        // only the tab region below it does.
+        overflow: 'hidden',
       }}
     >
       {/* ── Breadcrumb ─────────────────────────────────────────────────── */}
-      <Box sx={{ px: 2.5, pt: 2.5, pb: 1.5 }}>
+      <Box sx={{ px: 2.5, pt: 2.5, pb: 3, flexShrink: 0 }}>
         <Breadcrumbs
           aria-label="Breadcrumb"
           separator="/"
-          sx={{ '& .MuiBreadcrumbs-separator': { mx: 0.75, color: 'text.disabled' } }}
+          sx={{
+            '& .MuiBreadcrumbs-separator': { mx: 0.75, color: 'text.disabled' },
+          }}
         >
           <ButtonBase
             sx={{
@@ -371,136 +506,49 @@ function PatientSidebar() {
         </Breadcrumbs>
       </Box>
 
-      {/* ── Navigation ─────────────────────────────────────────────────── */}
-      <List component="nav" aria-label="Patient record sections" sx={{ px: 1.5, py: 0 }}>
-        {primaryTabs.map((tab) => {
-          const active = tab.id === activeTabId
-          return (
-            <Tooltip
-              key={tab.id}
-              title={tab.available ? '' : patient.unavailableTabHint}
-              placement="right"
-              disableInteractive
-            >
-              {/* Unbuilt sections keep their button semantics and stay in the
-                  tab order — a keyboard user can reach them and hear the hint —
-                  but carry no handler, so Enter/Space and a click both do
-                  nothing. `aria-disabled` rather than `disabled` is deliberate:
-                  `disabled` drops the element from the tab order and kills the
-                  hover the tooltip hangs off. */}
-              <Box>
-                <ListItemButton
-                  selected={active}
-                  onClick={tab.available ? () => setActiveTabId(tab.id) : undefined}
-                  aria-current={active ? 'page' : undefined}
-                  aria-disabled={tab.available ? undefined : true}
-                  disableRipple={!tab.available}
-                  sx={[
-                    {
-                      borderRadius: 1.5,
-                      mb: 0.5,
-                      // Roomier than a stock list row: these are the record's
-                      // top-level destinations, not items in a long list, and
-                      // they are the only thing above the fold in the rail.
-                      px: 2,
-                      py: 1.5,
-                      gap: 1.5,
-                      color: 'text.secondary',
-                      cursor: tab.available ? 'pointer' : 'default',
-                    },
-                    // The same gradient tile the horizontal band used, kept so
-                    // the selected section reads identically after the move.
-                    // `&&` out-specifies MUI's own `.Mui-selected` rule, which
-                    // would otherwise paint its tint over the gradient.
-                    active && ((theme: Theme) => ({ '&&': SELECTED_TAB_SX(theme) })),
-                  ]}
-                >
-                  <Icon name={tab.icon} size={20} />
-                  <Typography variant="body2" sx={{ fontWeight: active ? 600 : 400 }}>
-                    {tab.label}
-                  </Typography>
-                </ListItemButton>
-              </Box>
-            </Tooltip>
-          )
-        })}
-
-        {/* "More" carries the thirteen sections the rail has no room for, and
-            reads as selected while one of them is the active section. */}
-        <ListItemButton
-          selected={activeInOverflow}
-          onClick={(event) => setMoreAnchor(event.currentTarget)}
-          aria-haspopup="true"
-          aria-expanded={Boolean(moreAnchor)}
-          sx={{ borderRadius: 1.5, px: 2, py: 1.5, gap: 1.5, color: 'text.secondary' }}
-        >
-          <Icon name="more" size={20} />
-          <Typography variant="body2">{patient.moreLabel}</Typography>
-        </ListItemButton>
-      </List>
-
-      <Menu
-        open={Boolean(moreAnchor)}
-        anchorEl={moreAnchor}
-        onClose={() => setMoreAnchor(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-        slotProps={{ paper: { sx: { minWidth: 220, maxHeight: '60vh' } } }}
-      >
-        {overflowTabs.map((tab) => (
-          <MenuItem
-            key={tab.id}
-            selected={tab.id === activeTabId}
-            disabled={!tab.available}
-            onClick={() => {
-              setActiveTabId(tab.id)
-              setMoreAnchor(null)
-            }}
-            sx={{ gap: 1.5 }}
-          >
-            <Icon name={tab.icon} size={20} />
-            {tab.label}
-          </MenuItem>
-        ))}
-      </Menu>
-
-      <Divider sx={{ mt: 2 }} />
-
       {/* ── The patient ────────────────────────────────────────────────── */}
-      <Stack spacing={2} sx={{ p: 2.5 }}>
+      {/* Who, then what you can do for them, then where to go in the record:
+          the actions sit straight under the identity they act on, and the
+          section navigation follows them. */}
+      <Stack spacing={2} sx={{ px: 2.5, pb: 2, flexShrink: 0 }}>
         <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
           <PatientPhoto photo={patient.photo} initials={patient.initials} name={patient.name} />
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-              {patient.chartNumber}
-            </Typography>
+          <Stack spacing={0.75} sx={{ minWidth: 0, alignItems: 'flex-start' }}>
             {/* `h5`, not the `h1` the band used: the name is still the heading
                 of the record, but a 64px display size in a 300px column would
                 wrap "Julia Smith" onto three lines. */}
             <Typography variant="h5" component="h1" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
               {patient.name}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {patient.status}, {patient.dateOfBirth}
-            </Typography>
-          </Box>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+              <Typography variant="body2" color="text.secondary">
+                {patient.idLabel} {patient.id}
+              </Typography>
+              <Chip label={patient.status} size="small" color="success" variant="outlined" />
+            </Stack>
+            <Stack
+              direction="row"
+              spacing={1}
+              divider={<Divider orientation="vertical" flexItem />}
+              sx={{ alignItems: 'center' }}
+            >
+              {/* Word first, glyph after it — the word carries the meaning, so
+                  the icon is decorative and hidden from screen readers. */}
+              <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                <Typography variant="body2">{patient.sex.label}</Typography>
+                <Box aria-hidden sx={{ display: 'flex', color: 'text.secondary' }}>
+                  <Icon name={patient.sex.icon} size={16} />
+                </Box>
+              </Stack>
+              {/* A bare date is not self-explanatory; it names itself on hover. */}
+              <Tooltip title={patient.dateOfBirthLabel}>
+                <Typography variant="body2">{patient.dateOfBirth}</Typography>
+              </Tooltip>
+            </Stack>
+          </Stack>
         </Stack>
 
-        {/* Six fields, stacked. The band read them in two rows across three
-            columns; a column reads them straight down, which is the order they
-            appear in the record anyway.
-
-            Spaced at 3 rather than 1.5 so each label/value pair reads as one
-            group. At the tighter setting the gap BETWEEN pairs matched the gap
-            inside them, and six fields ran together into one twelve-line block
-            with no structure to scan. */}
-        <Stack spacing={3}>
-          {patient.fields.map((field) => (
-            <Field key={field.id} field={field} />
-          ))}
-        </Stack>
-
-        <Stack direction="row" spacing={1} sx={{ pt: 0.5 }}>
+        <Stack direction="row" spacing={1}>
           {iconActions.map((action) => (
             <Tooltip key={action.id} title={action.label}>
               <IconButton
@@ -524,7 +572,85 @@ function PatientSidebar() {
             sx={{ flexGrow: 1, height: 44, '& .MuiButton-startIcon': { m: 0 } }}
           />
         </Stack>
+
+        {/* Six fields in a two-column grid, read across in the record's own
+            pairs: provider/phone, the two insurances, last/next visit. A column
+            is 120px wide, so values may wrap rather than truncate — a clipped
+            provider name or insurance date is worse than a second line. */}
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+            columnGap: 2,
+            rowGap: 2,
+            pt: 0.5,
+          }}
+        >
+          {patient.fields.map((field) => (
+            <Field key={field.id} field={field} />
+          ))}
+        </Box>
       </Stack>
+
+      <Divider />
+
+      {/* ── Navigation ─────────────────────────────────────────────────── */}
+      {/* The only scrolling region. At rest it shows as many sections as fit
+          its height, and a floating toggle reveals the rest IN PLACE — the list
+          grows and this region scrolls, while everything above stays put. */}
+      <Box sx={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex' }}>
+        <Box
+          ref={scroller}
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            px: 1.5,
+            pt: 2,
+            // Expanded, room under the last row so the toggle never covers it;
+            // at rest the toggle may overlap the bottom row (see the measure).
+            pb: showAll ? TOGGLE_BAND : 0,
+            overflowY: showAll ? 'auto' : 'hidden',
+          }}
+        >
+          <List id={tabListId} component="nav" aria-label="Patient record sections" disablePadding>
+            {shownTabs.map(renderTab)}
+          </List>
+        </Box>
+
+        {/* Floats over the list; hidden (and out of the tab order and the
+            accessibility tree) when every section fits. */}
+        <Button
+          variant="outlined"
+          size="small"
+          onClick={() => setShowAll((open) => !open)}
+          aria-expanded={showAll}
+          aria-controls={tabListId}
+          endIcon={
+            <Box
+              component="span"
+              sx={{
+                display: 'flex',
+                transition: (theme) => theme.transitions.create('transform'),
+                transform: showAll ? 'rotate(180deg)' : 'none',
+              }}
+            >
+              <Icon name="dropdown" size={18} />
+            </Box>
+          }
+          sx={{
+            position: 'absolute',
+            left: '50%',
+            bottom: (theme) => theme.spacing(2),
+            transform: 'translateX(-50%)',
+            bgcolor: 'background.paper',
+            boxShadow: 2,
+            '&:hover': { bgcolor: 'background.paper', boxShadow: 4 },
+            visibility: overflows ? 'visible' : 'hidden',
+          }}
+        >
+          {showAll ? patient.lessLabel : patient.moreLabel}
+        </Button>
+      </Box>
     </Paper>
   )
 }
@@ -589,16 +715,26 @@ function PatientPhoto({
 function Field({ field }: { field: PatientField }) {
   return (
     <Box sx={{ minWidth: 0 }}>
-      <Typography variant="body2" color="text.secondary" noWrap>
+      <Typography variant="caption" component="p" color="text.secondary" noWrap>
         {field.label}
       </Typography>
-      <Typography
-        variant="subtitle2"
-        noWrap
-        sx={{ color: field.tone === 'accent' ? 'primary.main' : 'text.primary' }}
-      >
-        {field.value}
-      </Typography>
+      {/* An `accent` value is a call to action ("Set date"), so it is a link
+          — a real button underneath, since it opens something rather than
+          navigating anywhere. */}
+      {field.tone === 'accent' ? (
+        <Link
+          component="button"
+          variant="body2"
+          underline="hover"
+          sx={{ fontWeight: 500, textAlign: 'left' }}
+        >
+          {field.value}
+        </Link>
+      ) : (
+        <Typography variant="body2" sx={{ fontWeight: 500, color: 'text.primary' }}>
+          {field.value}
+        </Typography>
+      )}
     </Box>
   )
 }
@@ -645,6 +781,13 @@ function ChartPanel() {
     [layers],
   )
   const [chartId, setChartId] = useState(odontogram.activeChartId)
+  const [helpAnchor, setHelpAnchor] = useState<HTMLElement | null>(null)
+  // The first-visit tip shows until dismissed once, on this browser.
+  const [tipOpen, setTipOpen] = useState(() => !readTipSeen())
+  const dismissTip = () => {
+    setTipOpen(false)
+    writeTipSeen()
+  }
   const [archView, setArchView] = useState<ArchView>(odontogram.activeArchView)
   const [selectedFdi, setSelectedFdi] = useState<number | null>(null)
 
@@ -659,6 +802,8 @@ function ChartPanel() {
   // The endo tab works exactly the same way: same dentition, same camera, with
   // the pulp turned on over it. "Similar view to Dental, plus the canals."
   const endo = chartId === 'endo' ? odontogram.endo : null
+  // What a tooth click does on this tab — the last row of the chart help.
+  const selectHint = perio?.hint ?? endo?.hint ?? null
 
   // Caries, by contrast, is NOT read off `chartId`. A lesion belongs to the
   // tooth rather than to one chart, so it is handed over unconditionally and
@@ -695,31 +840,88 @@ function ChartPanel() {
   )
 
   const perioReadingByFdi = useMemo(() => perioByFdi(perioReadings), [perioReadings])
-  const selectedPerio = selectedTooth ? perioReadingByFdi.get(selectedTooth.fdi) : undefined
-
-  /**
-   * Record one site. Only ever touches the tooth and site named — a probing
-   * sequence edits one site at a time, and rewriting a whole tooth from the
-   * panel would silently carry stale values for the five sites not in hand.
-   */
-  const editPerioSite = (fdi: number, site: PerioSite, change: Partial<PerioSiteReading>) => {
-    setPerioReadings((current) =>
-      current.map((reading) =>
-        reading.fdi === fdi
-          ? { ...reading, sites: { ...reading.sites, [site]: { ...reading.sites[site], ...change } } }
-          : reading,
-      ),
-    )
-  }
 
   // The panel belongs to the perio chart alone: on the dental tab a tooth
   // selection means something else, and opening a probing form there would
   // invite readings to be entered against the wrong chart.
   const panelTooth = perio && selectedTooth ? selectedTooth : null
 
+  /*
+   * The panel edits a DRAFT of its tooth; nothing reaches the arch, the
+   * badges or the caption until Save. A draft for any tooth other than the
+   * one in the panel is stale and ignored.
+   */
+  const [perioDraft, setPerioDraft] = useState<PerioToothReading | null>(null)
+
+  /*
+   * The probing site in hand, held here rather than in the panel because the
+   * arch shows it too — a dot on the gum line, with the camera turned to face
+   * it. Keyed to its tooth: a new tooth starts back on the first site, since
+   * carrying "disto-buccal" across would put the next keypress on a site
+   * nobody chose.
+   */
+  const [siteInHand, setSiteInHand] = useState<{ fdi: number; site: PerioSite } | null>(null)
+  const activeSite: PerioSite =
+    panelTooth && siteInHand?.fdi === panelTooth.fdi ? siteInHand.site : PERIO_SITE_ORDER[0]
+  const savedPanelReading = panelTooth ? perioReadingByFdi.get(panelTooth.fdi) : undefined
+  const liveDraft = perioDraft && perioDraft.fdi === panelTooth?.fdi ? perioDraft : null
+  const panelReading = liveDraft ?? savedPanelReading
+  const perioDirty =
+    liveDraft !== null && JSON.stringify(liveDraft) !== JSON.stringify(savedPanelReading)
+
+  /**
+   * Record one site in the draft. Only ever touches the tooth and site named —
+   * a probing sequence edits one site at a time, and rewriting a whole tooth
+   * would silently carry stale values for the five sites not in hand.
+   */
+  const editPerioSite = (fdi: number, site: PerioSite, change: Partial<PerioSiteReading>) => {
+    setPerioDraft((current) => {
+      const base = current && current.fdi === fdi ? current : perioReadingByFdi.get(fdi)
+      if (!base) return current
+      return { ...base, sites: { ...base.sites, [site]: { ...base.sites[site], ...change } } }
+    })
+  }
+
+  const savePerio = () => {
+    if (!liveDraft) return
+    setPerioReadings((current) =>
+      current.map((reading) => (reading.fdi === liveDraft.fdi ? liveDraft : reading)),
+    )
+    setPerioDraft(null)
+  }
+
+  /*
+   * The ONE way anything leaves the tooth in the panel — Previous/Next, the
+   * rail, close, a click on the arch, a tab, view or arch change. With unsaved
+   * edits it parks the move and asks first; otherwise it just goes.
+   */
+  const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null)
+  const guard = (leave: () => void) => {
+    if (perioDirty) setPendingLeave(() => leave)
+    else leave()
+  }
+  const settleLeave = (save: boolean) => {
+    if (save) savePerio()
+    else setPerioDraft(null)
+    pendingLeave?.()
+    setPendingLeave(null)
+  }
+
+  // Closing or reloading the tab is a way to leave too, and the one the guard
+  // above cannot see; the browser's own prompt covers it.
+  useEffect(() => {
+    if (!perioDirty) return
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [perioDirty])
+
   return (
       <Paper
         component="section"
+        // The visible title gave way to the chart tabs; the section keeps it
+        // as its accessible name.
+        aria-label={title}
         elevation={0}
         sx={{
           p: 4,
@@ -746,33 +948,9 @@ function ChartPanel() {
           flexWrap: 'wrap',
         }}
       >
-        {/* Title and chart tabs take an equal share, so the two menus stay
-            centred over the arch no matter how wide either end gets. */}
-        {/* Size and weight (28px / 500) come from `typography.h2` in theme.ts —
-            this is the variant's only call site, so the scale owns them. */}
-        <Typography variant="h2" component="h2" sx={{ minWidth: 140, flex: '1 1 0' }}>
-          {title}
-        </Typography>
-
-        <Stack direction="row" spacing={1.5}>
-          <ChartLayersMenu layers={odontogram.layers} state={layers} onChange={setLayers} />
-          <ViewMenu
-            views={odontogram.views}
-            active={view}
-            onChange={(id) => {
-              setViewId(id)
-              /*
-               * Picking a standing view is a step BACK to the whole arch, so
-               * it lets go of any tooth. That also does the camera work: the
-               * flight home is already what a deselect orders, and it aims
-               * along whichever direction is current — so the view change and
-               * the return are one glide rather than two fighting each other.
-               */
-              setSelectedFdi(null)
-            }}
-          />
-        </Stack>
-
+        {/* Chart tabs lead where the title used to be — they ARE the panel's
+            heading now, naming which reading of the arch is on screen — and
+            the two menus sit flush right. */}
         <Tabs
           value={chartId}
           /*
@@ -785,14 +963,9 @@ function ChartPanel() {
            * so holding it is also the truer behaviour: the perio panel simply
            * appears or disappears around a tooth that stays picked.
            */
-          onChange={(_, id: string) => setChartId(id)}
+          onChange={(_, id: string) => guard(() => setChartId(id))}
           aria-label="Chart type"
-          sx={{
-            minWidth: 140,
-            flex: '1 1 0',
-            minHeight: 'auto',
-            '& .MuiTabs-list': { justifyContent: 'flex-end' },
-          }}
+          sx={{ minHeight: 'auto' }}
         >
           {odontogram.charts.map((chart) => (
             <Tab
@@ -811,6 +984,36 @@ function ChartPanel() {
             />
           ))}
         </Tabs>
+
+        {/* `stretch` so the arch selector takes the menus' height exactly. */}
+        <Stack direction="row" spacing={1.5} sx={{ ml: 'auto', alignItems: 'stretch' }}>
+          <ArchSelector
+            views={odontogram.archViews}
+            active={archView}
+            onChange={(next) => guard(() => setArchView(next))}
+            upperVisible={showUpper}
+            lowerVisible={showLower}
+          />
+          <ChartLayersMenu layers={odontogram.layers} state={layers} onChange={setLayers} />
+          <ViewMenu
+            views={odontogram.views}
+            active={view}
+            onChange={(id) =>
+              guard(() => {
+                setViewId(id)
+                /*
+                 * Picking a standing view is a step BACK to the whole arch, so
+                 * it lets go of any tooth. That also does the camera work: the
+                 * flight home is already what a deselect orders, and it aims
+                 * along whichever direction is current — so the view change and
+                 * the return are one glide rather than two fighting each other.
+                 */
+                setSelectedFdi(null)
+              })
+            }
+          />
+        </Stack>
+
       </Stack>
 
       {/*
@@ -856,13 +1059,14 @@ function ChartPanel() {
            * the view survives intact.
            */
           focusFdi={selectedTooth?.fdi ?? null}
+          focusSite={panelTooth ? activeSite : null}
           // Relative to the framed distance, which already carries the default
           // 30% step in — so this is the further step taken when a single
           // tooth is opened, not the whole zoom.
           zoom={selectedTooth ? 0.85 : 1}
           viewDirection={view.direction}
           show={show}
-          onSelect={setSelectedFdi}
+          onSelect={(fdi) => guard(() => setSelectedFdi(fdi))}
         />
       </Box>
 
@@ -882,8 +1086,6 @@ function ChartPanel() {
           display: 'flex',
           alignItems: 'center',
           pointerEvents: 'none',
-          // Keep the arch selector clear of the teeth.
-          pr: 8,
         }}
       >
         {/*
@@ -899,7 +1101,8 @@ function ChartPanel() {
             sx={{
               position: 'absolute',
               left: 0,
-              top: 0,
+              // Clear of the chart tabs above it by one 16px step.
+              top: (theme) => theme.spacing(2),
               bottom: 0,
               zIndex: 2,
               display: 'flex',
@@ -909,71 +1112,78 @@ function ChartPanel() {
             }}
           >
             <PerioToothPanel
-              // Remounting on the tooth resets which site and measurement are
-              // in hand. Carrying "disto-buccal, recession" across to the next
-              // tooth would put the next keypress on a site nobody chose.
+              // Remounting on the tooth resets which measurement is in hand
+              // (the site resets in `siteInHand`, keyed to the tooth). Carrying
+              // "recession" across to the next tooth would put the next
+              // keypress on a measure nobody chose.
               key={panelTooth.fdi}
               tooth={panelTooth}
               perio={perio}
-              reading={selectedPerio}
+              reading={panelReading}
+              dirty={perioDirty}
+              activeSite={activeSite}
+              onSiteChange={(site) => setSiteInHand({ fdi: panelTooth.fdi, site })}
               teeth={teeth}
               onEdit={editPerioSite}
-              onClose={() => setSelectedFdi(null)}
-              onSelectTooth={setSelectedFdi}
+              onSave={savePerio}
+              onClose={() => guard(() => setSelectedFdi(null))}
+              onSelectTooth={(fdi) => guard(() => setSelectedFdi(fdi))}
             />
           </Box>
         )}
 
         {/*
-          One column of asides: what the marks mean, then the finding for
-          whichever tooth is in hand. Stacked rather than overlaid so the
-          detail can never cover the legend that explains it.
+          One column of asides down the RIGHT edge: the finding for whichever
+          tooth is in hand at the top, and the legend — collapsible — pinned to
+          the bottom, out of the way of the arch. Stacked rather than overlaid
+          so the detail can never cover the legend that explains it.
 
-          It sits top-left normally, and moves to the BOTTOM-RIGHT once the
-          perio panel opens — the panel has taken the left of the screen, and
-          leaving the column there would stack two cards of clinical text on
-          top of each other. Nothing to clear at the bottom: the caption is on
-          the footer line below the canvas, not overlaid on it.
+          Right rather than left so it never collides with the perio panel,
+          which opens over the left of the arch — the column no longer has to
+          jump corners when it appears.
         */}
         <Stack
-          spacing={1.5}
+          spacing={2}
           sx={{
             position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
             maxWidth: 300,
-            maxHeight: '100%',
-            overflowY: 'auto',
-            alignItems: 'flex-start',
-            pointerEvents: 'auto',
-            ...(panelTooth
-              ? { right: (theme) => theme.spacing(8), bottom: 0 }
-              : { left: 0, top: 0 }),
+            alignItems: 'flex-end',
+            justifyContent: 'space-between',
           }}
         >
-          <ChartLegend
-            perio={perio}
-            caries={caries}
-            implants={implants}
-            endo={endo}
-            postCore={odontogram.postCore}
-          />
-          {selectedTooth && selectedLesions.length > 0 && (
-            <CariesDetail tooth={selectedTooth} findings={selectedLesions} caries={caries} />
-          )}
-          {selectedTooth && selectedFixture && (
-            <ImplantDetail tooth={selectedTooth} fixture={selectedFixture} implants={implants} />
-          )}
-          {selectedTooth && selectedCanals && endo && (
-            <EndoDetail tooth={selectedTooth} finding={selectedCanals} endo={endo} />
-          )}
-        </Stack>
+          <Stack
+            spacing={1.5}
+            sx={{
+              minHeight: 0,
+              overflowY: 'auto',
+              alignItems: 'flex-end',
+              pointerEvents: 'auto',
+            }}
+          >
+            {selectedTooth && selectedLesions.length > 0 && (
+              <CariesDetail tooth={selectedTooth} findings={selectedLesions} caries={caries} />
+            )}
+            {selectedTooth && selectedFixture && (
+              <ImplantDetail tooth={selectedTooth} fixture={selectedFixture} implants={implants} />
+            )}
+            {selectedTooth && selectedCanals && endo && (
+              <EndoDetail tooth={selectedTooth} finding={selectedCanals} endo={endo} />
+            )}
+          </Stack>
 
-        <ArchSelector
-          views={odontogram.archViews}
-          active={archView}
-          onChange={setArchView}
-          upperVisible={showUpper}
-          lowerVisible={showLower}
-        />
+          <Box sx={{ flexShrink: 0, pointerEvents: 'auto' }}>
+            <ChartLegend
+              perio={perio}
+              caries={caries}
+              implants={implants}
+              endo={endo}
+              postCore={odontogram.postCore}
+            />
+          </Box>
+        </Stack>
       </Box>
 
       {/*
@@ -994,20 +1204,72 @@ function ChartPanel() {
           mt: 3,
         }}
       >
-        <ArchCaption
-          teeth={teeth}
-          selectedFdi={selectedFdi}
-          perio={perio}
-          perioReadings={perioReadings}
-          caries={caries}
-          implants={implants}
-          endo={endo}
-        />
+        {/* The panel states the readings itself while it is open, so the line
+            under the model would only repeat it. The slot stays, empty, to
+            hold the corner buttons where they are. */}
+        {panelTooth ? (
+          <Box sx={{ flex: '1 1 auto' }} />
+        ) : (
+          <ArchCaption
+            teeth={teeth}
+            selectedFdi={selectedFdi}
+            perio={perio}
+            perioReadings={perioReadings}
+            caries={caries}
+            implants={implants}
+            endo={endo}
+          />
+        )}
 
-        <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
+        <Stack direction="row" spacing={1.5} sx={{ flexShrink: 0, alignItems: 'center' }}>
+          {/* Only while nothing is selected: the tooth caption then owns this
+              line, and the tip beside it would squeeze it into a column. */}
+          {tipOpen && selectedFdi === null && (
+            <ChartTip help={odontogram.model.help} selectHint={selectHint} onClose={dismissTip} />
+          )}
           <CornerAction item={odontogram.footerActions.start} />
-          <CornerAction item={odontogram.footerActions.end} />
+          <CornerAction
+            item={odontogram.footerActions.end}
+            expanded={Boolean(helpAnchor)}
+            onClick={(event) => {
+              setHelpAnchor(event.currentTarget)
+              // Opening the full help counts as having seen the tip.
+              dismissTip()
+            }}
+          />
         </Stack>
+        {panelTooth && perio && (
+          <Dialog
+            open={pendingLeave !== null}
+            onClose={() => setPendingLeave(null)}
+            aria-labelledby="perio-unsaved-title"
+          >
+            <DialogTitle id="perio-unsaved-title">{perio.panel.unsaved.title}</DialogTitle>
+            <DialogContent>
+              <DialogContentText>
+                {perio.panel.unsaved.body.replace(
+                  '{tooth}',
+                  `${perio.panel.titlePrefix} ${universalFromFdi(panelTooth.fdi)}${sideFromFdi(panelTooth.fdi)}`,
+                )}
+              </DialogContentText>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setPendingLeave(null)}>{perio.panel.unsaved.keepEditing}</Button>
+              <Button color="error" onClick={() => settleLeave(false)}>
+                {perio.panel.unsaved.discard}
+              </Button>
+              <Button variant="contained" onClick={() => settleLeave(true)}>
+                {perio.panel.unsaved.saveAndContinue}
+              </Button>
+            </DialogActions>
+          </Dialog>
+        )}
+        <ChartHelpPopover
+          help={odontogram.model.help}
+          selectHint={selectHint}
+          anchor={helpAnchor}
+          onClose={() => setHelpAnchor(null)}
+        />
       </Stack>
       </Paper>
   )
@@ -1030,6 +1292,7 @@ function ArchModel({
   postCore,
   zoom,
   focusFdi,
+  focusSite,
   viewDirection,
   show,
   onSelect,
@@ -1044,6 +1307,7 @@ function ArchModel({
   postCore: PostCoreChart
   zoom: number
   focusFdi: number | null
+  focusSite: PerioSite | null
   viewDirection: readonly [number, number, number]
   show: ChartLayerVisibility
   onSelect: (fdi: number | null) => void
@@ -1061,6 +1325,7 @@ function ArchModel({
         postCore={postCore}
         zoom={zoom}
         focusFdi={focusFdi}
+        focusSite={focusSite}
         viewDirection={viewDirection}
         show={show}
         onSelect={onSelect}
@@ -1084,6 +1349,30 @@ function ArchModel({
  *   perio, caries, implant and endo lines below repeat what the side panels
  *   already show. Don't thin them out.
  */
+/**
+ * The tooth's readings in one line of words: the deepest site, its depth and
+ * recession, and whether it bled. With no readings it says so — "not probed"
+ * is never rendered as "nothing found".
+ */
+function perioSummary(
+  perio: PerioChart,
+  tooth: Tooth,
+  reading: PerioToothReading | undefined,
+  unprobed: string,
+) {
+  if (!reading) return unprobed
+  const deepest = deepestSite(reading)
+  return [
+    // The site is NAMED, not just its numbers given. Six sites are probed per
+    // tooth and only the worst is quoted, so a depth with no site against it
+    // would read as the whole tooth's finding.
+    `${perio.labels.site} ${perio.siteLabels[tooth.arch][deepest.site]}`,
+    `${perio.labels.pocket} ${deepest.reading.pocketDepth} ${perio.unit}`,
+    `${perio.labels.recession} ${deepest.reading.recession} ${perio.unit}`,
+    deepest.reading.conditions.includes('bleeding') ? perio.labels.bleeding : perio.labels.noBleeding,
+  ].join(' · ')
+}
+
 function ArchCaption({
   teeth,
   selectedFdi,
@@ -1105,7 +1394,6 @@ function ArchCaption({
   const selected = teeth.find((tooth) => tooth.fdi === selectedFdi)
   const reading =
     selected && perio ? perioByFdi(perioReadings).get(selected.fdi) : undefined
-  const deepest = reading ? deepestSite(reading) : undefined
   const lesions = selected ? (cariesByFdi(caries).get(selected.fdi) ?? []) : []
   const fixture = selected ? implantsByFdi(implants).get(selected.fdi) : undefined
   const canal = selected && endo ? endoByFdi(endo).get(selected.fdi) : undefined
@@ -1113,13 +1401,11 @@ function ArchCaption({
   return (
     <Box sx={{ minWidth: 0, flex: '1 1 auto' }}>
       <Typography
-        variant="subtitle2"
+        variant="body2"
         aria-live="polite"
-        sx={{
-          color: selected ? 'text.primary' : 'text.secondary',
-          fontSize: '1.2rem',
-          fontWeight: 500,
-        }}
+        // A short description of what is picked, not a headline: the tooth
+        // reads in the primary colour, the readings after it recede.
+        sx={{ color: 'text.secondary' }}
       >
         {selected ? (
           // Both notations, both named. The badges number 1–32 (Universal)
@@ -1128,7 +1414,7 @@ function ArchCaption({
           // Universal 11 and FDI 11 are different teeth. The identity leads in
           // bold; the descriptors that follow stay at the caption weight.
           <>
-            <Box component="strong" sx={{ fontWeight: 700 }}>
+            <Box component="strong" sx={{ fontWeight: 600, color: 'text.primary' }}>
               {`${model.toothLabel} ${universalFromFdi(selected.fdi)}${sideFromFdi(selected.fdi)}`}
             </Box>
             {` · ${model.typeLabels[selected.type]} · FDI ${selected.fdi}`}
@@ -1140,9 +1426,6 @@ function ArchCaption({
                * the arch up. Side by side they fit, and `flexWrap` puts caries
                * back on its own line rather than truncating it when the panel
                * is narrow.
-               *
-               * fontSize is set once, on the row: nesting `0.85em` inside
-               * `0.85em` would compound to 0.72em.
                */
               <Box
                 component="span"
@@ -1153,8 +1436,7 @@ function ArchCaption({
                   columnGap: 1,
                   rowGap: 0.25,
                   mt: 0.5,
-                  fontSize: '0.85em',
-                }}
+                                  }}
               >
                 {perio && (
                   /*
@@ -1166,20 +1448,7 @@ function ArchCaption({
                    * to be inferred from a colour.
                    */
                   <Box component="span" sx={{ fontWeight: 400 }}>
-                    {deepest && selected
-                      ? [
-                          // The site is NAMED, not just its numbers given. Six
-                          // sites are probed per tooth and only the worst is
-                          // quoted here, so a depth with no site against it
-                          // would read as the whole tooth's finding.
-                          `${perio.labels.site} ${perio.siteLabels[selected.arch][deepest.site]}`,
-                          `${perio.labels.pocket} ${deepest.reading.pocketDepth} ${perio.unit}`,
-                          `${perio.labels.recession} ${deepest.reading.recession} ${perio.unit}`,
-                          deepest.reading.conditions.includes('bleeding')
-                            ? perio.labels.bleeding
-                            : perio.labels.noBleeding,
-                        ].join(' · ')
-                      : perio.labels.unprobed}
+                    {perioSummary(perio, selected, reading, perio.labels.unprobed)}
                   </Box>
                 )}
 
@@ -1231,7 +1500,7 @@ function ArchCaption({
                */
               <Box
                 component="span"
-                sx={{ display: 'block', mt: 0.5, fontSize: '0.85em', fontWeight: 600 }}
+                sx={{ display: 'block', mt: 0.5, fontWeight: 600 }}
               >
                 {`${implants.title} · ${fixture.diameter} × ${fixture.length} ${implants.unit}`}
               </Box>
@@ -1248,8 +1517,7 @@ function ArchCaption({
                 sx={{
                   display: 'block',
                   mt: 0.5,
-                  fontSize: '0.85em',
-                  fontWeight: 600,
+                                    fontWeight: 600,
                   color: 'error.dark',
                 }}
               >
@@ -1259,16 +1527,19 @@ function ArchCaption({
               </Box>
             )}
           </>
-        ) : (
-          (perio?.hint ?? endo?.hint ?? model.hint)
-        )}
+        ) : // Nothing until a tooth is picked: how to drive the arch lives
+        // behind the "?" button now, not on a permanent line under the model.
+        null}
       </Typography>
     </Box>
   )
 }
 
 /**
- * What the marks on the arch mean, and the warning that they are made up.
+ * What the marks on the arch mean — symbol, name and a line of explanation.
+ *
+ * Carries no sample-data warning: those were taken out of the legend on
+ * request. The finding cards for a selected tooth still state theirs.
  *
  * Sits over the canvas rather than in the panel header because it explains
  * what is visible on the model right now. Each row pairs its swatch with a
@@ -1304,73 +1575,114 @@ function ChartLegend({
     ...(caries.findings.length > 0 ? [caries.legend] : []),
     ...(implants.fixtures.length > 0 ? [implants.legend] : []),
   ]
+  const { legend } = patientChart.odontogram
+  const [open, setOpen] = useState(readLegendOpen)
+  const listId = useId()
   if (rows.length === 0) return null
 
+  const toggle = () => {
+    setOpen(!open)
+    writeLegendOpen(!open)
+  }
+
   return (
-    <Stack
-      spacing={1}
+    <Box
       sx={{
-        p: 1.5,
+        width: 300,
+        maxWidth: '100%',
         bgcolor: 'background.paper',
         border: (theme) => `1px solid ${theme.palette.divider}`,
         borderRadius: 1.5,
-        // The legend explains the model; it must never intercept a drag on it.
-        pointerEvents: 'none',
       }}
     >
-      {rows.map((item) => (
-        <Stack key={item.id} direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
-          <Box aria-hidden sx={{ mt: 0.5, flexShrink: 0 }}>
-            <LegendSwatch id={item.id} />
-          </Box>
-          <Box>
-            <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.3 }}>
-              {item.label}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-              {item.description}
-            </Typography>
-          </Box>
+      {/* The whole heading is the toggle: a bigger target than the chevron
+          alone, and it names what it hides. */}
+      <ButtonBase
+        onClick={toggle}
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-label={open ? legend.hideLabel : legend.showLabel}
+        sx={{
+          width: '100%',
+          justifyContent: 'space-between',
+          px: 1.5,
+          py: 1,
+          borderRadius: 1.5,
+          color: 'text.secondary',
+          '&:hover, &.Mui-focusVisible': { color: 'text.primary' },
+        }}
+      >
+        <Typography variant="caption" sx={{ fontWeight: 600 }}>
+          {legend.title}
+        </Typography>
+        <Box
+          component="span"
+          sx={{
+            display: 'flex',
+            transition: (theme) => theme.transitions.create('transform'),
+            transform: open ? 'rotate(180deg)' : 'none',
+          }}
+        >
+          <Icon name="dropdown" size={18} />
+        </Box>
+      </ButtonBase>
+
+      {open && (
+        <Stack id={listId} spacing={1} sx={{ px: 1.5, pb: 1.5 }}>
+          {rows.map((item) => (
+            <Stack key={item.id} direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+              {/* As tall as the label's first line and centred in it, so every
+                  swatch — a 2px line or a 10px dot — sits on the title it
+                  names rather than riding above it. */}
+              <Box
+                aria-hidden
+                sx={{
+                  typography: 'body2',
+                  lineHeight: 1.3,
+                  height: '1.3em',
+                  width: 14,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <LegendSwatch id={item.id} />
+              </Box>
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.3 }}>
+                  {item.label}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  {item.description}
+                </Typography>
+              </Box>
+            </Stack>
+          ))}
         </Stack>
-      ))}
-
-      {perio && (
-        <Typography
-          variant="caption"
-          sx={{ display: 'block', pt: 0.5, color: 'warning.dark', fontWeight: 600 }}
-        >
-          {perio.disclaimer}
-        </Typography>
       )}
-
-      {caries.findings.length > 0 && (
-        <Typography
-          variant="caption"
-          sx={{ display: 'block', color: 'warning.dark', fontWeight: 600 }}
-        >
-          {caries.disclaimer}
-        </Typography>
-      )}
-
-      {implants.fixtures.length > 0 && (
-        <Typography
-          variant="caption"
-          sx={{ display: 'block', color: 'warning.dark', fontWeight: 600 }}
-        >
-          {implants.disclaimer}
-        </Typography>
-      )}
-
-      {endo && endo.findings.length > 0 && (
-        <Typography
-          variant="caption"
-          sx={{ display: 'block', color: 'warning.dark', fontWeight: 600 }}
-        >
-          {endo.disclaimer}
-        </Typography>
-      )}
-    </Stack>
+    </Box>
   )
+}
+
+/** localStorage key for whether the legend is expanded. */
+const LEGEND_OPEN_KEY = 'emr-dental:legend-open'
+
+// Open unless the viewer collapsed it; storage failing just means open.
+function readLegendOpen() {
+  try {
+    return window.localStorage.getItem(LEGEND_OPEN_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+
+function writeLegendOpen(open: boolean) {
+  try {
+    window.localStorage.setItem(LEGEND_OPEN_KEY, open ? '1' : '0')
+  } catch {
+    // Not persisted; see `readLegendOpen`.
+  }
 }
 
 /** Each row's swatch drawn as the mark it stands for, so the two read as one thing. */
@@ -2052,31 +2364,47 @@ function PerioToothPanel({
   tooth,
   perio,
   reading,
+  dirty,
+  activeSite,
+  onSiteChange,
   teeth,
   onEdit,
+  onSave,
   onClose,
   onSelectTooth,
 }: {
   tooth: Tooth
   perio: PerioChart
-  /** `undefined` means never probed — not "probed and all zero". */
+  /**
+   * The tooth as being edited — the draft if there is one, else what is saved.
+   * `undefined` means never probed — not "probed and all zero".
+   */
   reading: PerioToothReading | undefined
-  /** Every tooth currently on the arch, for the rail and the next-tooth step. */
+  /** Whether `reading` holds edits not yet saved. */
+  dirty: boolean
+  /** The site in hand — owned by the parent, which also marks it on the arch. */
+  activeSite: PerioSite
+  onSiteChange: (site: PerioSite) => void
+  /** Every tooth currently on the arch, for the rail and Previous / Next. */
   teeth: Tooth[]
   onEdit: (fdi: number, site: PerioSite, change: Partial<PerioSiteReading>) => void
+  onSave: () => void
+  /** Both of these go through the unsaved-changes guard in the parent. */
   onClose: () => void
   onSelectTooth: (fdi: number) => void
 }) {
   const labels = perio.siteLabels[tooth.arch]
-  const [activeSite, setActiveSite] = useState<PerioSite>('distoLingual')
   const [activeMeasureId, setActiveMeasureId] = useState(perio.measures[0].id)
 
   const measure = perio.measures.find((m) => m.id === activeMeasureId) ?? perio.measures[0]
   const site = reading?.sites[activeSite]
   const healthy = reading ? !hasPerioFindings(reading, perio.flagDepth) : false
 
-  const index = teeth.findIndex((candidate) => candidate.fdi === tooth.fdi)
-  const next = teeth[(index + 1) % teeth.length]
+  // Previous / Next walk the same order the rail shows: ascending Universal.
+  const ordered = [...teeth].sort((a, b) => universalFromFdi(a.fdi) - universalFromFdi(b.fdi))
+  const index = ordered.findIndex((candidate) => candidate.fdi === tooth.fdi)
+  const previous = ordered[(index - 1 + ordered.length) % ordered.length]
+  const next = ordered[(index + 1) % ordered.length]
 
   return (
     <Paper
@@ -2096,8 +2424,17 @@ function PerioToothPanel({
     >
       <PerioToothRail teeth={teeth} selectedFdi={tooth.fdi} perio={perio} onSelect={onSelectTooth} />
 
-      <Stack spacing={2} sx={{ flexGrow: 1, minWidth: 0, p: 2.5, overflowY: 'auto' }}>
-        <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* `useFlexGap`: Stack's default spacing is a margin on each child, which
+          would override the footer's `mt: auto` and leave it floating mid-panel
+          instead of on the bottom edge. A gap leaves the margin free. */}
+      <Stack
+        spacing={2}
+        useFlexGap
+        sx={{ flexGrow: 1, minWidth: 0, p: 2.5, overflowY: 'auto' }}
+      >
+        {/* `flex-start`: the close button lines up with the top of the title,
+            not the middle of the two-line heading block. */}
+        <Stack direction="row" sx={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
           {/* Both notations, as everywhere else a tooth is named: Universal 3
               and FDI 3 are different teeth. */}
           <Box>
@@ -2141,7 +2478,7 @@ function PerioToothPanel({
                   reading={reading.sites[id]}
                   perio={perio}
                   selected={id === activeSite}
-                  onSelect={() => setActiveSite(id)}
+                  onSelect={() => onSiteChange(id)}
                 />
               ))}
             </Box>
@@ -2210,15 +2547,52 @@ function PerioToothPanel({
           </>
         )}
 
-        <Button
-          variant="outlined"
-          fullWidth
-          endIcon={<Icon name="nextTooth" size={20} />}
-          onClick={() => onSelectTooth(next.fdi)}
-          sx={{ mt: 'auto', py: 1.5 }}
-        >
-          {perio.panel.nextTooth}
-        </Button>
+        {/* Pushed to the bottom: a plain line of the readings as they stand in
+            the draft, then the three actions. No banner — the states that
+            need one are stated above the tiles. */}
+        <Stack spacing={1.5} sx={{ mt: 'auto', pt: 1 }}>
+          {/* Follows the controls above: the site picked in the tiles, the
+              measure picked in the tabs, and the conditions marked for that
+              site. With no readings at all it says so, never "fine". */}
+          <Typography variant="body2" color="text.secondary" aria-live="polite">
+            {site
+              ? [
+                  labels[activeSite],
+                  `${measure.label} ${site[measure.id]} ${perio.unit}`,
+                  site.conditions.length > 0
+                    ? perio.conditions
+                        .filter((condition) => site.conditions.includes(condition.id))
+                        .map((condition) => condition.label)
+                        .join(', ')
+                    : perio.panel.noConditions,
+                ].join(' · ')
+              : perio.panel.unprobedTitle}
+          </Typography>
+
+          <Stack direction="row" spacing={1}>
+            <Button
+              variant="outlined"
+              startIcon={<Icon name="previousTooth" size={20} />}
+              onClick={() => onSelectTooth(previous.fdi)}
+              sx={{ flex: '1 1 0' }}
+            >
+              {perio.panel.previousTooth}
+            </Button>
+            <Button
+              variant="outlined"
+              endIcon={<Icon name="nextTooth" size={20} />}
+              onClick={() => onSelectTooth(next.fdi)}
+              sx={{ flex: '1 1 0' }}
+            >
+              {perio.panel.nextTooth}
+            </Button>
+            {/* Enabled only with something to save, which doubles as the
+                "unsaved" cue. */}
+            <Button variant="contained" disabled={!dirty} onClick={onSave} sx={{ flex: '1 1 0' }}>
+              {perio.panel.save}
+            </Button>
+          </Stack>
+        </Stack>
       </Stack>
     </Paper>
   )
@@ -2413,57 +2787,119 @@ function PerioToothRail({
   onSelect: (fdi: number) => void
 }) {
   const rail = useRef<HTMLUListElement>(null)
+  // Which ends still have rows past them, so each fade shows only where there
+  // is actually more to scroll to.
+  const [more, setMore] = useState({ above: false, below: false })
 
-  const scroll = (direction: 1 | -1) => {
-    rail.current?.scrollBy({ top: direction * 160, behavior: 'smooth' })
+  /*
+   * Ascending by the number the rail SHOWS (Universal 1–32). The order is
+   * re-sorted, never the numbers — each row still names its own tooth, and the
+   * selection is still keyed by FDI underneath.
+   */
+  const ordered = useMemo(
+    () => [...teeth].sort((a, b) => universalFromFdi(a.fdi) - universalFromFdi(b.fdi)),
+    [teeth],
+  )
+
+  const measure = () => {
+    const el = rail.current
+    if (!el) return
+    const above = el.scrollTop > 1
+    const below = el.scrollTop + el.clientHeight < el.scrollHeight - 1
+    setMore((prev) => (prev.above === above && prev.below === below ? prev : { above, below }))
   }
 
+  /*
+   * Keep the picked tooth in view — picking one on the arch can select a row
+   * that is scrolled out of sight. CENTRED, not merely "nearest": a row at the
+   * very edge would sit under the fade. Set on `scrollTop` directly because
+   * `scrollIntoView` also scrolls every scrollable ancestor, page included.
+   * Re-run when the rail resizes, since the panel settles its height after.
+   */
+  useEffect(() => {
+    const el = rail.current
+    if (!el) return
+    const centre = () => {
+      const row = el.querySelector<HTMLElement>('[aria-current="true"]')
+      if (row) el.scrollTop = row.offsetTop - (el.clientHeight - row.offsetHeight) / 2
+      measure()
+    }
+    centre()
+    const observer = new ResizeObserver(centre)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [selectedFdi])
+
+  /*
+   * The fades replace the old up/down chevrons: the list's own ends dissolve
+   * into the grey, which says "there is more this way" without two buttons'
+   * worth of chrome. A mask rather than a gradient overlay, so it fades the
+   * rows themselves and never sits on top of a click.
+   */
+  const fade = 'calc(var(--mui-spacing) * 4)'
+  const mask = `linear-gradient(to bottom, ${
+    more.above ? `transparent, #000 ${fade}` : '#000, #000'
+  }, ${more.below ? `#000 calc(100% - ${fade}), transparent` : '#000'})`
+
   return (
-    <Stack
+    <Box
       sx={{
         width: 52,
         flexShrink: 0,
-        bgcolor: 'text.primary',
-        color: 'background.paper',
+        display: 'flex',
+        minHeight: 0,
+        bgcolor: 'background.default',
       }}
     >
-      <IconButton
-        aria-label={`${perio.panel.toothRail} — up`}
-        onClick={() => scroll(-1)}
-        sx={{ borderRadius: 0, color: 'inherit' }}
+      <List
+        ref={rail}
+        dense
+        aria-label={perio.panel.toothRail}
+        onScroll={measure}
+        sx={{
+          flexGrow: 1,
+          overflowY: 'auto',
+          px: 0,
+          py: 1,
+          maskImage: mask,
+          WebkitMaskImage: mask,
+        }}
       >
-        <Icon name="scrollUp" size={20} />
-      </IconButton>
-
-      <List ref={rail} dense disablePadding sx={{ flexGrow: 1, overflowY: 'auto' }}>
-        {teeth.map((tooth) => (
-          <ListItemButton
-            key={tooth.fdi}
-            selected={tooth.fdi === selectedFdi}
-            onClick={() => onSelect(tooth.fdi)}
-            sx={{
-              justifyContent: 'center',
-              px: 0,
-              py: 1,
-              fontVariantNumeric: 'tabular-nums',
-              '&.Mui-selected': { bgcolor: 'action.disabledBackground' },
-            }}
-          >
-            <Typography variant="body2" sx={{ fontWeight: tooth.fdi === selectedFdi ? 700 : 400 }}>
-              {universalFromFdi(tooth.fdi)}
-            </Typography>
-          </ListItemButton>
-        ))}
+        {ordered.map((tooth) => {
+          const selected = tooth.fdi === selectedFdi
+          return (
+            <ListItemButton
+              key={tooth.fdi}
+              selected={selected}
+              aria-current={selected ? 'true' : undefined}
+              onClick={() => onSelect(tooth.fdi)}
+              sx={{
+                justifyContent: 'center',
+                px: 0,
+                py: 0.75,
+                // Edge to edge: the chip spans the rail's full width.
+                borderRadius: 0,
+                color: 'text.secondary',
+                fontVariantNumeric: 'tabular-nums',
+                // The picked tooth is a raised white bar on the grey rail, in
+                // bold — lighter than the brand fill, which the panel already
+                // spends on Save. Not colour alone: weight, surface and shadow
+                // all change. `&&` out-specifies MUI's own selected tints.
+                '&&.Mui-selected': {
+                  bgcolor: 'background.paper',
+                  color: 'text.primary',
+                  boxShadow: 2,
+                },
+              }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: selected ? 700 : 500 }}>
+                {universalFromFdi(tooth.fdi)}
+              </Typography>
+            </ListItemButton>
+          )
+        })}
       </List>
-
-      <IconButton
-        aria-label={`${perio.panel.toothRail} — down`}
-        onClick={() => scroll(1)}
-        sx={{ borderRadius: 0, color: 'inherit' }}
-      >
-        <Icon name="scrollDown" size={20} />
-      </IconButton>
-    </Stack>
+    </Box>
   )
 }
 
@@ -2497,11 +2933,9 @@ function ArchSelector({
     <Stack
       role="group"
       aria-label="Arches shown"
+      direction="row"
+      spacing={0.5}
       sx={{
-        position: 'absolute',
-        right: 0,
-        top: '50%',
-        transform: 'translateY(-50%)',
         // Sits on the pointer-transparent aside layer, so it re-arms itself.
         pointerEvents: 'auto',
         p: 0.5,
@@ -2513,14 +2947,15 @@ function ArchSelector({
       {views.map((view) => {
         const isActive = view === active
         return (
-          <Tooltip key={view} title={ARCH_VIEW_LABELS[view]} placement="left">
+          <Tooltip key={view} title={ARCH_VIEW_LABELS[view]}>
             <ButtonBase
               onClick={() => onChange(view)}
               aria-pressed={isActive}
               aria-label={ARCH_VIEW_LABELS[view]}
               sx={{
-                width: 40,
-                height: 30,
+                width: 44,
+                // Fills the row, which the header stretches to the menus' height.
+                height: '100%',
                 borderRadius: 1,
                 color: isActive ? 'primary.main' : 'text.disabled',
                 bgcolor: isActive ? 'action.selected' : 'transparent',
@@ -2529,7 +2964,7 @@ function ArchSelector({
                 '& svg': { transform: view === 'lower' ? 'scaleY(-1)' : undefined },
               }}
             >
-              <ArchGlyph filled={isActive || filledFor[view]} />
+              <ArchGlyph filled={isActive || filledFor[view]} both={view === 'both'} />
             </ButtonBase>
           </Tooltip>
         )
@@ -2538,11 +2973,23 @@ function ArchSelector({
   )
 }
 
-function CornerAction({ item }: { item: RailItem }) {
+function CornerAction({
+  item,
+  expanded,
+  onClick,
+}: {
+  item: RailItem
+  /** Set when the button opens a popup — announces whether it is open. */
+  expanded?: boolean
+  onClick?: (event: React.MouseEvent<HTMLElement>) => void
+}) {
   return (
     <Tooltip title={item.label}>
       <IconButton
         aria-label={item.label}
+        onClick={onClick}
+        aria-haspopup={expanded === undefined ? undefined : 'dialog'}
+        aria-expanded={expanded}
         sx={{
           width: 52,
           height: 52,
@@ -2554,6 +3001,121 @@ function CornerAction({ item }: { item: RailItem }) {
         <Icon name={item.icon} size={24} />
       </IconButton>
     </Tooltip>
+  )
+}
+
+// ─── CHART HELP ───────────────────────────────────────────────────────────
+
+/** localStorage key for "the first-visit tip has been dismissed". */
+const TIP_SEEN_KEY = 'emr-dental:chart-tip-seen'
+
+// Storage can be missing or throw (private windows, blocked site data); the
+// tip then simply shows again next visit, which is the safe failure.
+function readTipSeen() {
+  try {
+    return window.localStorage.getItem(TIP_SEEN_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeTipSeen() {
+  try {
+    window.localStorage.setItem(TIP_SEEN_KEY, '1')
+  } catch {
+    // Not persisted; see `readTipSeen`.
+  }
+}
+
+/** The gestures, with the tooth click re-worded for the current chart tab. */
+function gesturesFor(help: ChartHelp, selectHint: string | null) {
+  return help.gestures.map((item) =>
+    item.id === 'select' && selectHint ? { ...item, action: selectHint } : item,
+  )
+}
+
+/**
+ * The one-time tip on a first visit: every gesture on one line, beside the
+ * "?" that holds them for good. Dismissing it — or opening the full help —
+ * stores that it was seen.
+ */
+function ChartTip({
+  help,
+  selectHint,
+  onClose,
+}: {
+  help: ChartHelp
+  selectHint: string | null
+  onClose: () => void
+}) {
+  const gestures = gesturesFor(help, selectHint)
+  return (
+    <Alert
+      severity="info"
+      variant="outlined"
+      onClose={onClose}
+      slotProps={{ closeButton: { 'aria-label': help.dismissLabel } }}
+      sx={{ bgcolor: 'background.paper', py: 0, alignItems: 'center' }}
+    >
+      <Typography variant="body2">
+        <Box component="strong" sx={{ fontWeight: 600 }}>
+          {help.tipTitle}:
+        </Box>{' '}
+        {gestures.map((item) => `${item.gesture} to ${item.short}`).join(' · ')}
+      </Typography>
+    </Alert>
+  )
+}
+
+/** The full help behind the "?" button: each gesture and what it does. */
+function ChartHelpPopover({
+  help,
+  selectHint,
+  anchor,
+  onClose,
+}: {
+  help: ChartHelp
+  selectHint: string | null
+  anchor: HTMLElement | null
+  onClose: () => void
+}) {
+  const gestures = gesturesFor(help, selectHint)
+  return (
+    <Popover
+      open={Boolean(anchor)}
+      anchorEl={anchor}
+      onClose={onClose}
+      anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      transformOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      slotProps={{
+        paper: { role: 'dialog', 'aria-label': help.title, sx: { mt: -1, p: 2.5, width: 300 } },
+      }}
+    >
+      <Typography variant="subtitle2" component="h3" sx={{ mb: 1.5 }}>
+        {help.title}
+      </Typography>
+      <Box
+        component="dl"
+        sx={{
+          m: 0,
+          display: 'grid',
+          gridTemplateColumns: 'auto 1fr',
+          columnGap: 2,
+          rowGap: 1,
+        }}
+      >
+        {gestures.map((item) => (
+          <Fragment key={item.id}>
+            <Typography component="dt" variant="body2" sx={{ fontWeight: 600 }}>
+              {item.gesture}
+            </Typography>
+            <Typography component="dd" variant="body2" color="text.secondary" sx={{ m: 0 }}>
+              {item.action}
+            </Typography>
+          </Fragment>
+        ))}
+      </Box>
+    </Popover>
   )
 }
 

@@ -558,6 +558,16 @@ export function ringHeightAt(ring: GingivalRing, angle: number): number {
   return ring.y[a] * (1 - t) + ring.y[b] * t
 }
 
+/** The ring's distance from the long axis at an arbitrary angle, interpolated. */
+export function ringRadiusAt(ring: GingivalRing, angle: number): number {
+  const at = sectorOf(angle)
+  const low = Math.floor(at)
+  const t = at - low
+  const a = ((low % RING_SECTORS) + RING_SECTORS) % RING_SECTORS
+  const b = (a + 1) % RING_SECTORS
+  return ring.radius[a] * (1 - t) + ring.radius[b] * t
+}
+
 /**
  * The ring as points, ready for a curve.
  *
