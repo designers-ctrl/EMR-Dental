@@ -22,67 +22,20 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Popover from '@mui/material/Popover'
+import Snackbar from '@mui/material/Snackbar'
 import Stack from '@mui/material/Stack'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
 import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { darken, lighten, type Theme } from '@mui/material/styles'
-import type { SvgIconComponent } from '@mui/icons-material'
 
-import AddPhotoAlternateOutlined from '@mui/icons-material/AddPhotoAlternateOutlined'
-import ArticleOutlined from '@mui/icons-material/ArticleOutlined'
-import AssignmentIndOutlined from '@mui/icons-material/AssignmentIndOutlined'
-import BarChartOutlined from '@mui/icons-material/BarChartOutlined'
-import CachedOutlined from '@mui/icons-material/CachedOutlined'
-import CalendarMonthOutlined from '@mui/icons-material/CalendarMonthOutlined'
-import CallOutlined from '@mui/icons-material/CallOutlined'
-import CheckBoxOutlined from '@mui/icons-material/CheckBoxOutlined'
-import ChevronLeftOutlined from '@mui/icons-material/ChevronLeftOutlined'
-import ChevronRightOutlined from '@mui/icons-material/ChevronRightOutlined'
-import CloseOutlined from '@mui/icons-material/CloseOutlined'
-import ContactMailOutlined from '@mui/icons-material/ContactMailOutlined'
-import ContactPageOutlined from '@mui/icons-material/ContactPageOutlined'
-import ContentPasteOutlined from '@mui/icons-material/ContentPasteOutlined'
-import CreditCardOutlined from '@mui/icons-material/CreditCardOutlined'
-import DescriptionOutlined from '@mui/icons-material/DescriptionOutlined'
-import DynamicFormOutlined from '@mui/icons-material/DynamicFormOutlined'
-import EditNoteOutlined from '@mui/icons-material/EditNoteOutlined'
-import ExpandMoreOutlined from '@mui/icons-material/ExpandMoreOutlined'
-import FemaleOutlined from '@mui/icons-material/FemaleOutlined'
-import ForwardToInboxOutlined from '@mui/icons-material/ForwardToInboxOutlined'
-import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined'
-import HelpOutlined from '@mui/icons-material/HelpOutlined'
-import LayersOutlined from '@mui/icons-material/LayersOutlined'
-import HistoryOutlined from '@mui/icons-material/HistoryOutlined'
-import HubOutlined from '@mui/icons-material/HubOutlined'
-import KeyboardTabOutlined from '@mui/icons-material/KeyboardTabOutlined'
-import LibraryBooksOutlined from '@mui/icons-material/LibraryBooksOutlined'
-import MaleOutlined from '@mui/icons-material/MaleOutlined'
-import MedicationOutlined from '@mui/icons-material/MedicationOutlined'
-import MoreHorizOutlined from '@mui/icons-material/MoreHorizOutlined'
-import MenuBookOutlined from '@mui/icons-material/MenuBookOutlined'
-import NearMeOutlined from '@mui/icons-material/NearMeOutlined'
-import NotificationImportantOutlined from '@mui/icons-material/NotificationImportantOutlined'
-import PersonOutlined from '@mui/icons-material/PersonOutlined'
-import PhotoOutlined from '@mui/icons-material/PhotoOutlined'
 import PhotoCameraOutlined from '@mui/icons-material/PhotoCameraOutlined'
-import PostAddOutlined from '@mui/icons-material/PostAddOutlined'
-import ReceiptLongOutlined from '@mui/icons-material/ReceiptLongOutlined'
-import ScienceOutlined from '@mui/icons-material/ScienceOutlined'
-import SentimentSatisfiedAltOutlined from '@mui/icons-material/SentimentSatisfiedAltOutlined'
-import SettingsOutlined from '@mui/icons-material/SettingsOutlined'
-import ShareOutlined from '@mui/icons-material/ShareOutlined'
-import ShoppingBasketOutlined from '@mui/icons-material/ShoppingBasketOutlined'
-import StickyNote2Outlined from '@mui/icons-material/StickyNote2Outlined'
-import SupportAgentOutlined from '@mui/icons-material/SupportAgentOutlined'
-import VaccinesOutlined from '@mui/icons-material/VaccinesOutlined'
-import ViewInArOutlined from '@mui/icons-material/ViewInArOutlined'
-import VisibilityOffOutlined from '@mui/icons-material/VisibilityOffOutlined'
 
-import logo from '../assets/EMRdentallogo.svg'
 import {
+  CARIES_SURFACE_ORDER,
   cariesByFdi,
   deepestSite,
   postCoreByFdi,
@@ -97,7 +50,12 @@ import {
   universalFromFdi,
   type ArchView,
   type CariesChart,
+  type CariesDecision,
   type CariesFinding,
+  type CariesGrade,
+  type CariesSurface,
+  type CariesSurfaceAssessment,
+  type CariesToothAssessment,
   type ChartHelp,
   type ChartLayerId,
   type ChartLayers,
@@ -121,158 +79,11 @@ import {
   type RailItem,
   type Tooth,
 } from '../data/patientChart.ts'
+import { Icon } from '../components/Icon.tsx'
+import { Rail } from '../components/Rail.tsx'
 import { ArchGlyph } from './ArchGlyph.tsx'
 import { CARIES_PAINT, ENDO_PAINT, IMPLANT_PAINT, POST_PAINT } from './toothScene.ts'
 import { ToothArch3D, type ChartLayerVisibility } from './ToothArch.tsx'
-
-/** The one place icon names from the dataset become components. */
-const ICONS: Record<IconName, SvgIconComponent> = {
-  schedule: CalendarMonthOutlined,
-  operations: HubOutlined,
-  tasks: ContentPasteOutlined,
-  billing: CreditCardOutlined,
-  settings: SettingsOutlined,
-  patients: ContactPageOutlined,
-  referrals: LibraryBooksOutlined,
-  contacts: ContactMailOutlined,
-  treatmentPlans: EditNoteOutlined,
-  inventory: ShoppingBasketOutlined,
-  pharmacy: VaccinesOutlined,
-  library: MenuBookOutlined,
-  notes: StickyNote2Outlined,
-  support: SupportAgentOutlined,
-  collapse: KeyboardTabOutlined,
-  recall: CachedOutlined,
-  newForm: PostAddOutlined,
-  message: ForwardToInboxOutlined,
-  call: CallOutlined,
-  sexFemale: FemaleOutlined,
-  sexMale: MaleOutlined,
-  general: PersonOutlined,
-  photos: PhotoOutlined,
-  charts: BarChartOutlined,
-  eclaims: NearMeOutlined,
-  ledger: DescriptionOutlined,
-  implantExam: ReceiptLongOutlined,
-  smile: SentimentSatisfiedAltOutlined,
-  checklists: CheckBoxOutlined,
-  lab: ScienceOutlined,
-  imaging: AddPhotoAlternateOutlined,
-  erx: MedicationOutlined,
-  docs: ArticleOutlined,
-  forms: DynamicFormOutlined,
-  alerts: NotificationImportantOutlined,
-  clinicalNotes: AssignmentIndOutlined,
-  sharedCare: ShareOutlined,
-  sPad: EditNoteOutlined,
-  hidden: VisibilityOffOutlined,
-  history: HistoryOutlined,
-  help: HelpOutlined,
-  close: CloseOutlined,
-  previousTooth: ChevronLeftOutlined,
-  nextTooth: ChevronRightOutlined,
-  back: ArrowBackOutlined,
-  more: MoreHorizOutlined,
-  layers: LayersOutlined,
-  view3d: ViewInArOutlined,
-  dropdown: ExpandMoreOutlined,
-}
-
-function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
-  const Component = ICONS[name]
-  return <Component sx={{ fontSize: size }} />
-}
-
-// ─── APP RAIL ─────────────────────────────────────────────────────────────
-
-function Rail() {
-  const { groups, footer } = patientChart.rail
-  const [activeId, setActiveId] = useState(patientChart.rail.activeItemId)
-
-  return (
-    <Stack
-      component="nav"
-      aria-label="Sections"
-      sx={{
-        width: (theme) => theme.layout.railWidth,
-        flexShrink: 0,
-        bgcolor: 'background.paper',
-        borderRight: (theme) => `1px solid ${theme.palette.divider}`,
-        overflowY: 'auto',
-        py: 2,
-        alignItems: 'center',
-      }}
-    >
-      <Box sx={{ mb: 2, display: 'grid', placeItems: 'center' }}>
-        <Box component="img" src={logo} alt="EMR Dental" sx={{ width: 34, height: 34 }} />
-      </Box>
-
-      {groups.map((group, index) => (
-        <Stack key={group.id} sx={{ width: '100%', alignItems: 'center' }}>
-          {index > 0 && <Divider flexItem sx={{ my: 1.5, mx: 2 }} />}
-          {group.items.map((item) => (
-            <RailButton
-              key={item.id}
-              item={item}
-              active={item.id === activeId}
-              onClick={() => setActiveId(item.id)}
-            />
-          ))}
-        </Stack>
-      ))}
-
-      <Box sx={{ flexGrow: 1, minHeight: 24 }} />
-      <RailButton item={footer} active={false} onClick={() => {}} />
-    </Stack>
-  )
-}
-
-function RailButton({
-  item,
-  active,
-  onClick,
-}: {
-  item: RailItem
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <Tooltip title={item.label} placement="right">
-      <ButtonBase
-        aria-label={item.label}
-        aria-current={active ? 'page' : undefined}
-        onClick={onClick}
-        sx={{
-          position: 'relative',
-          width: (theme) => theme.layout.iconButton,
-          height: (theme) => theme.layout.iconButton,
-          my: 0.25,
-          borderRadius: 1.5,
-          color: active ? 'primary.main' : 'text.secondary',
-          bgcolor: active ? 'action.selected' : 'transparent',
-          transition: (theme) => theme.transitions.create(['background-color', 'color']),
-          '&:hover': { bgcolor: active ? 'action.selected' : 'action.hover' },
-          // The active item also gets a bar in the rail's left margin.
-          '&::before': active
-            ? {
-                content: '""',
-                position: 'absolute',
-                left: (theme) => theme.spacing(-2),
-                top: '50%',
-                transform: 'translateY(-50%)',
-                width: 2,
-                height: 26,
-                borderRadius: 1,
-                bgcolor: 'primary.main',
-              }
-            : undefined,
-        }}
-      >
-        <Icon name={item.icon} />
-      </ButtonBase>
-    </Tooltip>
-  )
-}
 
 // ─── PATIENT HEADER ───────────────────────────────────────────────────────
 
@@ -330,7 +141,7 @@ const SELECTED_TAB_SX = (theme: Theme) => {
  */
 const TOGGLE_BAND = 9
 
-function PatientSidebar() {
+function PatientSidebar({ onOpenPatients }: { onOpenPatients: () => void }) {
   const { patient } = patientChart
   const [activeTabId, setActiveTabId] = useState(patient.activeTabId)
 
@@ -484,7 +295,9 @@ function PatientSidebar() {
             '& .MuiBreadcrumbs-separator': { mx: 0.75, color: 'text.disabled' },
           }}
         >
+          {/* The way back to the list this record was opened from. */}
           <ButtonBase
+            onClick={onOpenPatients}
             sx={{
               gap: 0.5,
               borderRadius: 0.5,
@@ -749,6 +562,13 @@ function Field({ field }: { field: PatientField }) {
  * one that shows where a tooth actually sits. What remains of the chart around
  * it is the mode row, the arch selector and the corner actions.
  */
+/** A tooth with nothing recorded about its caries yet. */
+const blankCaries = (fdi: number): CariesToothAssessment => ({
+  fdi,
+  surfaces: {},
+  decision: null,
+})
+
 function ChartPanel() {
   const { title, odontogram } = patientChart
   // Which marks are drawn, and from where. Seeded from the dataset's own
@@ -847,11 +667,123 @@ function ChartPanel() {
   const panelTooth = perio && selectedTooth ? selectedTooth : null
 
   /*
-   * The panel edits a DRAFT of its tooth; nothing reaches the arch, the
-   * badges or the caption until Save. A draft for any tooth other than the
-   * one in the panel is stale and ignored.
+   * The caries assessments as they stand, SEEDED from the dataset and edited
+   * by the dental panel — per surface, kept as each entry is made.
    */
-  const [perioDraft, setPerioDraft] = useState<PerioToothReading | null>(null)
+  const [cariesAssessments, setCariesAssessments] = useState<CariesToothAssessment[]>(
+    () => caries.assessments,
+  )
+  /*
+   * The dental panel opens for ANY tooth picked on the Dental tab — the plain
+   * chart, with neither overlay up. It used to open only for a tooth already
+   * carrying a caries finding, but the panel now has the tooth rail, and a
+   * rail that closed the panel on thirty of its thirty-two rows would be a
+   * trap. A tooth with nothing recorded opens blank, ready to be charted.
+   * Perio and endo have their own readings of a tooth; a tooth picked there
+   * opens theirs, not this.
+   */
+  const cariesPanelTooth = !perio && !endo && selectedTooth ? selectedTooth : null
+  const cariousTeeth = useMemo(() => new Set(lesions.keys()), [lesions])
+  const cariesPanelAssessment: CariesToothAssessment | null = cariesPanelTooth
+    ? (cariesAssessments.find((entry) => entry.fdi === cariesPanelTooth.fdi) ??
+      blankCaries(cariesPanelTooth.fdi))
+    : null
+  /** Whichever tooth panel is open — it holds the left of the card either way. */
+  const sidePanelOpen = Boolean(panelTooth || cariesPanelTooth)
+
+  /*
+   * The crown surface in hand, held here rather than in the panel because the
+   * arch shows it too — outlined on the tooth, with the camera turned to face
+   * it. Keyed to its tooth, like the perio site: a newly opened tooth starts on
+   * its own first recorded surface, not on the last one looked at elsewhere.
+   */
+  const [surfaceInHand, setSurfaceInHand] = useState<{
+    fdi: number
+    surface: CariesSurface
+  } | null>(null)
+  const activeSurface: CariesSurface | null =
+    cariesPanelTooth && cariesPanelAssessment
+      ? surfaceInHand?.fdi === cariesPanelTooth.fdi
+        ? surfaceInHand.surface
+        : (CARIES_SURFACE_ORDER.find((surface) => cariesPanelAssessment.surfaces[surface]) ??
+          'occlusal')
+      : null
+
+  /** Change one tooth's assessment, creating its entry on the first edit. */
+  const updateCaries = (
+    fdi: number,
+    change: (entry: CariesToothAssessment) => CariesToothAssessment,
+  ) => {
+    setCariesAssessments((current) =>
+      current.some((entry) => entry.fdi === fdi)
+        ? current.map((entry) => (entry.fdi === fdi ? change(entry) : entry))
+        : [...current, change(blankCaries(fdi))],
+    )
+  }
+  const editCariesSurface = (
+    fdi: number,
+    surface: CariesSurface,
+    change: Partial<CariesSurfaceAssessment>,
+  ) =>
+    updateCaries(fdi, (entry) => ({
+      ...entry,
+      surfaces: {
+        ...entry.surfaces,
+        [surface]: {
+          tissue: null,
+          cavitation: null,
+          grade: null,
+          ...entry.surfaces[surface],
+          ...change,
+        },
+      },
+    }))
+  /*
+   * The notice raised when a decision is made — "Tooth 3R needs treatment".
+   * `id` changes on every decision, which is what restarts the notice's timer
+   * when a second one lands while the first is still up.
+   */
+  const [decisionNotice, setDecisionNotice] = useState<{
+    id: number
+    fdi: number
+    decision: CariesDecision
+  } | null>(null)
+  const decideCaries = (fdi: number, decision: CariesDecision | null) => {
+    updateCaries(fdi, (entry) => ({ ...entry, decision }))
+    // Clearing a decision announces nothing — and takes down a notice that
+    // would now be stating something no longer true.
+    setDecisionNotice((current) =>
+      decision ? { id: (current?.id ?? 0) + 1, fdi, decision } : null,
+    )
+  }
+  const noticeOption = decisionNotice
+    ? caries.panel.decisions.find((option) => option.id === decisionNotice.decision)
+    : undefined
+  /** Back to nothing recorded. The panel confirms before calling this. */
+  const resetCaries = (fdi: number) => updateCaries(fdi, () => blankCaries(fdi))
+
+  /*
+   * The grades each carious tooth carries, for its badge on the arch — read
+   * from the same state the panel edits, so the two cannot disagree. Each
+   * grade once, lowest first: the badge says how far the tooth's lesions have
+   * got, not how many surfaces share a grade.
+   */
+  const cariesGrades = useMemo(
+    () =>
+      new Map(
+        cariesAssessments.flatMap((entry) => {
+          const grades = [
+            ...new Set(
+              Object.values(entry.surfaces).flatMap((surface) =>
+                surface.grade ? [surface.grade] : [],
+              ),
+            ),
+          ].sort()
+          return grades.length > 0 ? [[entry.fdi, grades] as const] : []
+        }),
+      ),
+    [cariesAssessments],
+  )
 
   /*
    * The probing site in hand, held here rather than in the panel because the
@@ -863,58 +795,26 @@ function ChartPanel() {
   const [siteInHand, setSiteInHand] = useState<{ fdi: number; site: PerioSite } | null>(null)
   const activeSite: PerioSite =
     panelTooth && siteInHand?.fdi === panelTooth.fdi ? siteInHand.site : PERIO_SITE_ORDER[0]
-  const savedPanelReading = panelTooth ? perioReadingByFdi.get(panelTooth.fdi) : undefined
-  const liveDraft = perioDraft && perioDraft.fdi === panelTooth?.fdi ? perioDraft : null
-  const panelReading = liveDraft ?? savedPanelReading
-  const perioDirty =
-    liveDraft !== null && JSON.stringify(liveDraft) !== JSON.stringify(savedPanelReading)
+  const panelReading = panelTooth ? perioReadingByFdi.get(panelTooth.fdi) : undefined
 
   /**
-   * Record one site in the draft. Only ever touches the tooth and site named —
-   * a probing sequence edits one site at a time, and rewriting a whole tooth
-   * would silently carry stale values for the five sites not in hand.
+   * Record one site — straight into the chart, as it was before the draft:
+   * there is no Save step, every entry is kept as it is made, and the arch,
+   * the badges and the pocket shading redraw from it at once.
+   *
+   * Only ever touches the tooth and site named — a probing sequence edits one
+   * site at a time, and rewriting a whole tooth from the panel would silently
+   * carry stale values for the five sites not in hand.
    */
   const editPerioSite = (fdi: number, site: PerioSite, change: Partial<PerioSiteReading>) => {
-    setPerioDraft((current) => {
-      const base = current && current.fdi === fdi ? current : perioReadingByFdi.get(fdi)
-      if (!base) return current
-      return { ...base, sites: { ...base.sites, [site]: { ...base.sites[site], ...change } } }
-    })
-  }
-
-  const savePerio = () => {
-    if (!liveDraft) return
     setPerioReadings((current) =>
-      current.map((reading) => (reading.fdi === liveDraft.fdi ? liveDraft : reading)),
+      current.map((reading) =>
+        reading.fdi === fdi
+          ? { ...reading, sites: { ...reading.sites, [site]: { ...reading.sites[site], ...change } } }
+          : reading,
+      ),
     )
-    setPerioDraft(null)
   }
-
-  /*
-   * The ONE way anything leaves the tooth in the panel — Previous/Next, the
-   * rail, close, a click on the arch, a tab, view or arch change. With unsaved
-   * edits it parks the move and asks first; otherwise it just goes.
-   */
-  const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null)
-  const guard = (leave: () => void) => {
-    if (perioDirty) setPendingLeave(() => leave)
-    else leave()
-  }
-  const settleLeave = (save: boolean) => {
-    if (save) savePerio()
-    else setPerioDraft(null)
-    pendingLeave?.()
-    setPendingLeave(null)
-  }
-
-  // Closing or reloading the tab is a way to leave too, and the one the guard
-  // above cannot see; the browser's own prompt covers it.
-  useEffect(() => {
-    if (!perioDirty) return
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault()
-    window.addEventListener('beforeunload', warn)
-    return () => window.removeEventListener('beforeunload', warn)
-  }, [perioDirty])
 
   return (
       <Paper
@@ -924,11 +824,17 @@ function ChartPanel() {
         aria-label={title}
         elevation={0}
         sx={{
-          p: 4,
+          // 20px to the card's edge above and below, 32px at the sides — the
+          // control strip and the legend stand in the bottom corners, and 20px
+          // there read as flush against the edge.
+          py: 2.5,
+          px: 4,
           position: 'relative',
           // The model layer bleeds out past the padding to the card's edges;
-          // this is what trims it back to the rounded corner.
-          overflow: 'hidden',
+          // this is what trims it back to the rounded corner. `clip` rather
+          // than `hidden` so the card can never be scrolled sideways by focus
+          // landing on an aside that runs past its edge.
+          overflow: 'clip',
           flexGrow: 1,
           minWidth: 0,
           minHeight: 0,
@@ -963,7 +869,7 @@ function ChartPanel() {
            * so holding it is also the truer behaviour: the perio panel simply
            * appears or disappears around a tooth that stays picked.
            */
-          onChange={(_, id: string) => guard(() => setChartId(id))}
+          onChange={(_, id: string) => setChartId(id)}
           aria-label="Chart type"
           sx={{ minHeight: 'auto' }}
         >
@@ -985,32 +891,22 @@ function ChartPanel() {
           ))}
         </Tabs>
 
-        {/* `stretch` so the arch selector takes the menus' height exactly. */}
-        <Stack direction="row" spacing={1.5} sx={{ ml: 'auto', alignItems: 'stretch' }}>
-          <ArchSelector
-            views={odontogram.archViews}
-            active={archView}
-            onChange={(next) => guard(() => setArchView(next))}
-            upperVisible={showUpper}
-            lowerVisible={showLower}
-          />
+        <Stack direction="row" spacing={1.5} sx={{ ml: 'auto' }}>
           <ChartLayersMenu layers={odontogram.layers} state={layers} onChange={setLayers} />
           <ViewMenu
             views={odontogram.views}
             active={view}
-            onChange={(id) =>
-              guard(() => {
-                setViewId(id)
-                /*
-                 * Picking a standing view is a step BACK to the whole arch, so
-                 * it lets go of any tooth. That also does the camera work: the
-                 * flight home is already what a deselect orders, and it aims
-                 * along whichever direction is current — so the view change and
-                 * the return are one glide rather than two fighting each other.
-                 */
-                setSelectedFdi(null)
-              })
-            }
+            onChange={(id) => {
+              setViewId(id)
+              /*
+               * Picking a standing view is a step BACK to the whole arch, so
+               * it lets go of any tooth. That also does the camera work: the
+               * flight home is already what a deselect orders, and it aims
+               * along whichever direction is current — so the view change and
+               * the return are one glide rather than two fighting each other.
+               */
+              setSelectedFdi(null)
+            }}
           />
         </Stack>
 
@@ -1026,13 +922,13 @@ function ChartPanel() {
 
         `inset: 0` really is the full white background: an absolutely
         positioned box lays out against its ancestor's PADDING box, and the
-        Paper has no border, so that box IS the card — the `p: 4` insets
+        Paper has no border, so that box IS the card — the padding insets
         children in the flow, not this one. Cancelling the padding with a
-        negative inset overshoots by 64px and quietly throws the model off
+        negative inset overshoots and quietly throws the model off
         centre inside a canvas the card then has to clip.
 
-        Everything else — the header, the asides, the footer — now floats over
-        it on `zIndex: 1`.
+        Everything else — the header and the asides — floats over it on
+        `zIndex: 1`.
       */}
       <Box
         sx={{
@@ -1048,6 +944,7 @@ function ChartPanel() {
           perio={perio}
           perioReadings={perioReadings}
           caries={caries}
+          cariesGrades={cariesGrades}
           implants={implants}
           endo={endo}
           postCore={odontogram.postCore}
@@ -1060,20 +957,21 @@ function ChartPanel() {
            */
           focusFdi={selectedTooth?.fdi ?? null}
           focusSite={panelTooth ? activeSite : null}
+          focusSurface={activeSurface}
           // Relative to the framed distance, which already carries the default
           // 30% step in — so this is the further step taken when a single
           // tooth is opened, not the whole zoom.
           zoom={selectedTooth ? 0.85 : 1}
           viewDirection={view.direction}
           show={show}
-          onSelect={(fdi) => guard(() => setSelectedFdi(fdi))}
+          onSelect={setSelectedFdi}
         />
       </Box>
 
       {/*
-        The layer the asides sit on. Takes the same space the model used to,
-        so the legend and the arch selector keep the positions they had — but
-        it is TRANSPARENT TO THE POINTER, or it would swallow every drag meant
+        The layer the asides sit on. Fills the card under the header — there
+        is no footer row any more, so the model's controls and the legend sit
+        in its bottom corners — but it is TRANSPARENT TO THE POINTER, or it would swallow every drag meant
         for the model now underneath it. Each child that is actually
         interactive turns pointer events back on for itself.
       */}
@@ -1101,6 +999,7 @@ function ChartPanel() {
             sx={{
               position: 'absolute',
               left: 0,
+              width: TOOTH_PANEL_WIDTH,
               // Clear of the chart tabs above it by one 16px step.
               top: (theme) => theme.spacing(2),
               bottom: 0,
@@ -1120,27 +1019,59 @@ function ChartPanel() {
               tooth={panelTooth}
               perio={perio}
               reading={panelReading}
-              dirty={perioDirty}
               activeSite={activeSite}
               onSiteChange={(site) => setSiteInHand({ fdi: panelTooth.fdi, site })}
               teeth={teeth}
               onEdit={editPerioSite}
-              onSave={savePerio}
-              onClose={() => guard(() => setSelectedFdi(null))}
-              onSelectTooth={(fdi) => guard(() => setSelectedFdi(fdi))}
+              onClose={() => setSelectedFdi(null)}
+              onSelectTooth={setSelectedFdi}
+            />
+          </Box>
+        )}
+
+        {/* The dental counterpart, in the same slot: a tooth picked on the
+            Dental tab opens its caries assessment. */}
+        {cariesPanelTooth && cariesPanelAssessment && activeSurface && (
+          <Box
+            sx={{
+              position: 'absolute',
+              left: 0,
+              width: TOOTH_PANEL_WIDTH,
+              top: (theme) => theme.spacing(2),
+              bottom: 0,
+              zIndex: 2,
+              display: 'flex',
+              maxWidth: '100%',
+              pointerEvents: 'auto',
+            }}
+          >
+            <CariesToothPanel
+              // Remounting on the tooth closes a reset confirmation left
+              // open for the previous one.
+              key={cariesPanelTooth.fdi}
+              tooth={cariesPanelTooth}
+              caries={caries}
+              assessment={cariesPanelAssessment}
+              teeth={teeth}
+              carious={cariousTeeth}
+              onSelectTooth={setSelectedFdi}
+              activeSurface={activeSurface}
+              onSurfaceChange={(surface) =>
+                setSurfaceInHand({ fdi: cariesPanelTooth.fdi, surface })
+              }
+              onEditSurface={editCariesSurface}
+              onDecide={decideCaries}
+              onReset={resetCaries}
+              onClose={() => setSelectedFdi(null)}
             />
           </Box>
         )}
 
         {/*
-          One column of asides down the RIGHT edge: the finding for whichever
-          tooth is in hand at the top, and the legend — collapsible — pinned to
-          the bottom, out of the way of the arch. Stacked rather than overlaid
-          so the detail can never cover the legend that explains it.
-
-          Right rather than left so it never collides with the perio panel,
-          which opens over the left of the arch — the column no longer has to
-          jump corners when it appears.
+          The RIGHT edge, top to bottom: the finding for whichever tooth is in
+          hand, then — pinned to the bottom corner — the legend that explains
+          the marks. Stacked rather than overlaid, so a finding can never cover
+          the legend; the findings scroll inside whatever height it leaves.
         */}
         <Stack
           spacing={2}
@@ -1161,8 +1092,48 @@ function ChartPanel() {
               overflowY: 'auto',
               alignItems: 'flex-end',
               pointerEvents: 'auto',
+              // A step of air under the menus, so the first card does not
+              // butt against them.
+              pt: 1,
             }}
           >
+            {/*
+              The decision notice, first in the column: directly under the
+              Chart Layers and View menus. A Snackbar for what it does —
+              times out, pauses while hovered or focused, closes on Escape —
+              but taken out of its fixed viewport corner (`position: static`)
+              so it sits in this column and pushes the cards below it down
+              rather than covering them.
+            */}
+            {decisionNotice && noticeOption && (
+              <Snackbar
+                key={decisionNotice.id}
+                open
+                autoHideDuration={6000}
+                // Only the timer, Escape or the close button dismiss it — a
+                // click elsewhere is someone carrying on charting.
+                onClose={(_, reason) => {
+                  if (reason !== 'clickaway') setDecisionNotice(null)
+                }}
+                sx={{ position: 'static', transform: 'none', width: '100%' }}
+              >
+                <Alert
+                  // `status`, not the stock `alert`: it confirms something the
+                  // user just did, so it should be read out politely.
+                  role="status"
+                  severity={decisionNotice.decision === 'treat' ? 'warning' : 'info'}
+                  variant="outlined"
+                  onClose={() => setDecisionNotice(null)}
+                  slotProps={{ closeButton: { 'aria-label': caries.panel.dismissNotice } }}
+                  sx={{ width: '100%', bgcolor: 'background.paper' }}
+                >
+                  {noticeOption.notice.replace(
+                    '{tooth}',
+                    `${caries.panel.titlePrefix} ${universalFromFdi(decisionNotice.fdi)}${sideFromFdi(decisionNotice.fdi)}`,
+                  )}
+                </Alert>
+              </Snackbar>
+            )}
             {selectedTooth && selectedLesions.length > 0 && (
               <CariesDetail tooth={selectedTooth} findings={selectedLesions} caries={caries} />
             )}
@@ -1174,7 +1145,7 @@ function ChartPanel() {
             )}
           </Stack>
 
-          <Box sx={{ flexShrink: 0, pointerEvents: 'auto' }}>
+          <Box sx={{ flexShrink: 0, pointerEvents: 'auto', maxWidth: '100%' }}>
             <ChartLegend
               perio={perio}
               caries={caries}
@@ -1184,93 +1155,82 @@ function ChartPanel() {
             />
           </Box>
         </Stack>
+
+        {/*
+          The BOTTOM-LEFT corner: the controls for the model itself in one
+          vertical strip — which arches show, then history and help — and,
+          beside it on the bottom edge, what is selected (or, on a first visit
+          with nothing selected, the one-time tip).
+
+          While a tooth panel is open it holds the left of the card, so this
+          group starts just past it instead of underneath it — and the caption
+          is dropped, because the panel states the readings itself.
+        */}
+        <Stack
+          direction="row"
+          spacing={2}
+          sx={{
+            position: 'absolute',
+            left: sidePanelOpen
+              ? (theme) => `calc(${TOOTH_PANEL_WIDTH}px + ${theme.spacing(2)})`
+              : 0,
+            bottom: 0,
+            // Stops short of the legend column on the right.
+            maxWidth: (theme) =>
+              sidePanelOpen
+                ? `calc(100% - ${TOOTH_PANEL_WIDTH}px - 300px - ${theme.spacing(4)})`
+                : `calc(100% - 300px - ${theme.spacing(2)})`,
+            alignItems: 'flex-end',
+          }}
+        >
+          <Stack
+            spacing={1.5}
+            sx={{ flexShrink: 0, alignItems: 'center', pointerEvents: 'auto' }}
+          >
+            <ArchSelector
+              views={odontogram.archViews}
+              active={archView}
+              onChange={setArchView}
+              upperVisible={showUpper}
+              lowerVisible={showLower}
+            />
+            <CornerAction item={odontogram.footerActions.start} />
+            <CornerAction
+              item={odontogram.footerActions.end}
+              expanded={Boolean(helpAnchor)}
+              onClick={(event) => {
+                setHelpAnchor(event.currentTarget)
+                // Opening the full help counts as having seen the tip.
+                dismissTip()
+              }}
+            />
+          </Stack>
+
+          {!sidePanelOpen && (
+            <ArchCaption
+              teeth={teeth}
+              selectedFdi={selectedFdi}
+              perio={perio}
+              perioReadings={perioReadings}
+              caries={caries}
+              implants={implants}
+              endo={endo}
+            />
+          )}
+          {tipOpen && selectedFdi === null && (
+            <Box sx={{ pointerEvents: 'auto', minWidth: 0 }}>
+              <ChartTip help={odontogram.model.help} selectHint={selectHint} onClose={dismissTip} />
+            </Box>
+          )}
+        </Stack>
       </Box>
 
-      {/*
-        The footer line: what is selected on the left, the two chart affordances
-        together on the right. `flex-start` rather than centre so the buttons
-        keep a fixed offset from the top of the row while the caption grows
-        downward — a tooth with perio, caries, implant and endo findings runs to
-        four lines, and centring would slide the buttons on every selection.
-      */}
-      <Stack
-        direction="row"
-        spacing={2}
-        sx={{
-          position: 'relative',
-          zIndex: 1,
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          mt: 3,
-        }}
-      >
-        {/* The panel states the readings itself while it is open, so the line
-            under the model would only repeat it. The slot stays, empty, to
-            hold the corner buttons where they are. */}
-        {panelTooth ? (
-          <Box sx={{ flex: '1 1 auto' }} />
-        ) : (
-          <ArchCaption
-            teeth={teeth}
-            selectedFdi={selectedFdi}
-            perio={perio}
-            perioReadings={perioReadings}
-            caries={caries}
-            implants={implants}
-            endo={endo}
-          />
-        )}
-
-        <Stack direction="row" spacing={1.5} sx={{ flexShrink: 0, alignItems: 'center' }}>
-          {/* Only while nothing is selected: the tooth caption then owns this
-              line, and the tip beside it would squeeze it into a column. */}
-          {tipOpen && selectedFdi === null && (
-            <ChartTip help={odontogram.model.help} selectHint={selectHint} onClose={dismissTip} />
-          )}
-          <CornerAction item={odontogram.footerActions.start} />
-          <CornerAction
-            item={odontogram.footerActions.end}
-            expanded={Boolean(helpAnchor)}
-            onClick={(event) => {
-              setHelpAnchor(event.currentTarget)
-              // Opening the full help counts as having seen the tip.
-              dismissTip()
-            }}
-          />
-        </Stack>
-        {panelTooth && perio && (
-          <Dialog
-            open={pendingLeave !== null}
-            onClose={() => setPendingLeave(null)}
-            aria-labelledby="perio-unsaved-title"
-          >
-            <DialogTitle id="perio-unsaved-title">{perio.panel.unsaved.title}</DialogTitle>
-            <DialogContent>
-              <DialogContentText>
-                {perio.panel.unsaved.body.replace(
-                  '{tooth}',
-                  `${perio.panel.titlePrefix} ${universalFromFdi(panelTooth.fdi)}${sideFromFdi(panelTooth.fdi)}`,
-                )}
-              </DialogContentText>
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={() => setPendingLeave(null)}>{perio.panel.unsaved.keepEditing}</Button>
-              <Button color="error" onClick={() => settleLeave(false)}>
-                {perio.panel.unsaved.discard}
-              </Button>
-              <Button variant="contained" onClick={() => settleLeave(true)}>
-                {perio.panel.unsaved.saveAndContinue}
-              </Button>
-            </DialogActions>
-          </Dialog>
-        )}
-        <ChartHelpPopover
-          help={odontogram.model.help}
-          selectHint={selectHint}
-          anchor={helpAnchor}
-          onClose={() => setHelpAnchor(null)}
-        />
-      </Stack>
+      <ChartHelpPopover
+        help={odontogram.model.help}
+        selectHint={selectHint}
+        anchor={helpAnchor}
+        onClose={() => setHelpAnchor(null)}
+      />
       </Paper>
   )
 }
@@ -1279,7 +1239,7 @@ function ChartPanel() {
  * The dentition in its real arch.
  *
  * No number rows and no columns: the teeth carry their own identity here, so
- * `ArchCaption` on the footer line names whichever one is selected instead.
+ * `ArchCaption` in the bottom-left corner, beside the control strip, names whichever one is selected instead.
  */
 function ArchModel({
   teeth,
@@ -1287,12 +1247,14 @@ function ArchModel({
   perio,
   perioReadings,
   caries,
+  cariesGrades,
   implants,
   endo,
   postCore,
   zoom,
   focusFdi,
   focusSite,
+  focusSurface,
   viewDirection,
   show,
   onSelect,
@@ -1302,12 +1264,14 @@ function ArchModel({
   perio: PerioChart | null
   perioReadings: PerioToothReading[]
   caries: CariesChart
+  cariesGrades: ReadonlyMap<number, readonly CariesGrade[]>
   implants: ImplantChart
   endo: EndoChart | null
   postCore: PostCoreChart
   zoom: number
   focusFdi: number | null
   focusSite: PerioSite | null
+  focusSurface: CariesSurface | null
   viewDirection: readonly [number, number, number]
   show: ChartLayerVisibility
   onSelect: (fdi: number | null) => void
@@ -1320,12 +1284,14 @@ function ArchModel({
         perio={perio}
         perioReadings={perioReadings}
         caries={caries}
+        cariesGrades={cariesGrades}
         implants={implants}
         endo={endo}
         postCore={postCore}
         zoom={zoom}
         focusFdi={focusFdi}
         focusSite={focusSite}
+        focusSurface={focusSurface}
         viewDirection={viewDirection}
         show={show}
         onSelect={onSelect}
@@ -2340,6 +2306,476 @@ function ViewMenu({
   )
 }
 
+// ─── TOOTH PANELS ─────────────────────────────────────────────────────────
+
+/** A tooth panel's width, px — also how far the bottom-left asides step aside for it. */
+const TOOTH_PANEL_WIDTH = 468
+
+/**
+ * The heading every tooth panel opens with: the tooth in both notations, its
+ * type, and the close button level with the top of the title.
+ */
+function ToothPanelHeader({
+  titlePrefix,
+  tooth,
+  closeLabel,
+  onClose,
+}: {
+  titlePrefix: string
+  tooth: Tooth
+  closeLabel: string
+  onClose: () => void
+}) {
+  return (
+    // `flex-start`: the close button lines up with the top of the title, not
+    // the middle of the two-line heading block.
+    <Stack direction="row" sx={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      {/* Both notations, as everywhere else a tooth is named: Universal 3 and
+          FDI 3 are different teeth. */}
+      <Box>
+        <Typography variant="h5" component="h3" sx={{ fontWeight: 700 }}>
+          {`${titlePrefix} ${universalFromFdi(tooth.fdi)}${sideFromFdi(tooth.fdi)}`}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          {`FDI ${tooth.fdi} · ${patientChart.odontogram.model.typeLabels[tooth.type]}`}
+        </Typography>
+      </Box>
+      <IconButton aria-label={closeLabel} onClick={onClose}>
+        <Icon name="close" size={22} />
+      </IconButton>
+    </Stack>
+  )
+}
+
+// ─── CARIES TOOTH PANEL ───────────────────────────────────────────────────
+
+/** A surface nobody has assessed yet. */
+const UNASSESSED: CariesSurfaceAssessment = { tissue: null, cavitation: null, grade: null }
+
+/**
+ * Where each surface sits in the panel's cross, as `row / column` of a 3 × 3
+ * grid: buccal above, lingual/palatal below, mesial and distal either side of
+ * the biting surface in the middle — the tooth seen from its biting end.
+ */
+const CARIES_SURFACE_CELL: Record<CariesSurface, string> = {
+  buccal: '1 / 2',
+  mesial: '2 / 1',
+  occlusal: '2 / 2',
+  distal: '2 / 3',
+  lingual: '3 / 2',
+}
+
+/**
+ * A surface's name ON THIS TOOTH. The tongue side of an upper tooth faces the
+ * palate, and an anterior tooth bites on an incisal edge, not an occlusal
+ * table — the same two keys, named for where the tooth is.
+ */
+function cariesSurfaceLabel(caries: CariesChart, tooth: Tooth, surface: CariesSurface) {
+  const { surfaceLabelOverrides } = caries.panel
+  if (surface === 'lingual' && tooth.arch === 'upper') return surfaceLabelOverrides.upperLingual
+  if (surface === 'occlusal' && (tooth.type === 'incisor' || tooth.type === 'canine')) {
+    return surfaceLabelOverrides.anteriorOcclusal
+  }
+  return caries.surfaceLabels[surface]
+}
+
+/**
+ * The caries assessment for ONE tooth, opened by picking a carious tooth on
+ * the Dental tab.
+ *
+ * The counterpart of the perio panel, built the same way: tiles on top for the
+ * places a finding can be, the controls under them for whichever tile is in
+ * hand, and every entry kept as it is made. The differences are the anatomy's,
+ * not the layout's — caries is charted on the crown's FIVE surfaces, where
+ * perio probes six points round the gum.
+ *
+ * Each surface carries its own depth, cavitation and grade, because one tooth
+ * can hold lesions of different severity on different faces; the grade shows
+ * on the tile so all five read at a glance. The footer never scrolls away, and
+ * its decision is for the tooth as a whole.
+ */
+function CariesToothPanel({
+  tooth,
+  caries,
+  assessment,
+  teeth,
+  carious,
+  onSelectTooth,
+  activeSurface,
+  onSurfaceChange,
+  onEditSurface,
+  onDecide,
+  onReset,
+  onClose,
+}: {
+  tooth: Tooth
+  caries: CariesChart
+  assessment: CariesToothAssessment
+  /** Every tooth currently on the arch, for the rail. */
+  teeth: Tooth[]
+  /** The teeth that carry a caries finding — dotted in the rail. */
+  carious: ReadonlySet<number>
+  onSelectTooth: (fdi: number) => void
+  /** The surface in hand — owned by the parent, which also outlines it on the arch. */
+  activeSurface: CariesSurface
+  onSurfaceChange: (surface: CariesSurface) => void
+  /** Both applied at once — there is no Save step. */
+  onEditSurface: (
+    fdi: number,
+    surface: CariesSurface,
+    change: Partial<CariesSurfaceAssessment>,
+  ) => void
+  onDecide: (fdi: number, decision: CariesDecision | null) => void
+  /** Clears everything recorded for the tooth. Only called once confirmed. */
+  onReset: (fdi: number) => void
+  onClose: () => void
+}) {
+  const { panel } = caries
+  const [confirmingReset, setConfirmingReset] = useState(false)
+  const surfacesId = useId()
+  const resetTitleId = useId()
+  const current = assessment.surfaces[activeSurface] ?? UNASSESSED
+  const title = `${panel.titlePrefix} ${universalFromFdi(tooth.fdi)}${sideFromFdi(tooth.fdi)}`
+  const hasEntries =
+    assessment.decision !== null ||
+    Object.values(assessment.surfaces).some(
+      (surface) => surface.tissue !== null || surface.cavitation !== null || surface.grade !== null,
+    )
+
+  return (
+    <Paper
+      component="section"
+      // Raised, like the perio panel: it floats over the model.
+      elevation={8}
+      aria-label={title}
+      sx={{
+        width: '100%',
+        flexShrink: 0,
+        display: 'flex',
+        overflow: 'hidden',
+        borderRadius: 2,
+      }}
+    >
+      {/* Every tooth panel carries the tooth list down its left side — the
+          same rail as the perio panel — so stepping to another tooth never
+          means closing the panel and finding it on the arch. */}
+      <ToothRail
+        teeth={teeth}
+        selectedFdi={tooth.fdi}
+        label={panel.toothRail}
+        flagged={carious}
+        flagLabel={panel.toothRailFlag}
+        onSelect={onSelectTooth}
+      />
+
+      <Box sx={{ flexGrow: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        {/* Everything but the actions scrolls; the footer below never does. */}
+        <Stack spacing={2.5} sx={{ flexGrow: 1, minHeight: 0, p: 2.5, overflowY: 'auto' }}>
+          <ToothPanelHeader
+            titlePrefix={panel.titlePrefix}
+            tooth={tooth}
+            closeLabel={panel.close}
+            onClose={onClose}
+          />
+
+          <Box role="group" aria-labelledby={surfacesId}>
+            <ChoiceHeading id={surfacesId}>{panel.surfacesTitle}</ChoiceHeading>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1 }}>
+              {CARIES_SURFACE_ORDER.map((surface) => (
+                <CariesSurfaceTile
+                  key={surface}
+                  label={cariesSurfaceLabel(caries, tooth, surface)}
+                  grade={assessment.surfaces[surface]?.grade ?? null}
+                  ungraded={panel.ungraded}
+                  selected={surface === activeSurface}
+                  cell={CARIES_SURFACE_CELL[surface]}
+                  onSelect={() => onSurfaceChange(surface)}
+                />
+              ))}
+            </Box>
+          </Box>
+
+          {/* The three questions below are about the surface picked above. */}
+          <ToggleChoice
+            title={panel.tissueTitle}
+            options={panel.tissues}
+            value={current.tissue}
+            onChange={(tissue) => onEditSurface(tooth.fdi, activeSurface, { tissue })}
+          />
+          <ToggleChoice
+            title={panel.cavitationTitle}
+            options={panel.cavitations}
+            value={current.cavitation}
+            onChange={(cavitation) => onEditSurface(tooth.fdi, activeSurface, { cavitation })}
+          />
+          <ChoiceGroup
+            title={panel.gradeTitle}
+            options={panel.grades}
+            value={current.grade}
+            columns={4}
+            onChange={(grade) => onEditSurface(tooth.fdi, activeSurface, { grade })}
+          />
+        </Stack>
+
+        {/*
+          Pinned to the bottom edge, outside the scroller: what is to be done
+          about the tooth must stay in reach however far the form above has been
+          scrolled.
+
+          Reset stands apart on the left, as the one that undoes; the two
+          decisions sit together on the right with Treat as the primary. The
+          decision in force carries a tick and `aria-pressed` — Treat is filled
+          whether chosen or not, so fill alone cannot be what says "chosen".
+          Pressing the chosen one again clears it.
+        */}
+        <Stack
+          direction="row"
+          spacing={1}
+          // A gap, not Stack's default child margins — those would override the
+          // `mr: auto` that holds Reset on the left.
+          useFlexGap
+          sx={{
+            flexShrink: 0,
+            alignItems: 'center',
+            px: 2.5,
+            py: 2,
+            borderTop: (theme) => `1px solid ${theme.palette.divider}`,
+            bgcolor: 'background.paper',
+          }}
+        >
+          <Button
+            color="inherit"
+            disabled={!hasEntries}
+            startIcon={<Icon name="reset" size={18} />}
+            onClick={() => setConfirmingReset(true)}
+            sx={{ color: 'text.secondary', mr: 'auto' }}
+          >
+            {panel.reset}
+          </Button>
+
+          <Stack direction="row" spacing={1} role="group" aria-label={panel.decisionTitle}>
+            {panel.decisions.map((decision) => {
+              const chosen = assessment.decision === decision.id
+              return (
+                <Button
+                  key={decision.id}
+                  variant={decision.id === 'treat' ? 'contained' : 'outlined'}
+                  aria-pressed={chosen}
+                  startIcon={chosen ? <Icon name="check" size={18} /> : undefined}
+                  onClick={() => onDecide(tooth.fdi, chosen ? null : decision.id)}
+                  sx={{ minWidth: 112, py: 1.25 }}
+                >
+                  {decision.label}
+                </Button>
+              )
+            })}
+          </Stack>
+        </Stack>
+
+      </Box>
+
+      {/* Reset wipes what was recorded, and entries are kept the moment they
+          are made — so there is no Save to fall back on. It asks first. */}
+      <Dialog
+        open={confirmingReset}
+        onClose={() => setConfirmingReset(false)}
+        aria-labelledby={resetTitleId}
+      >
+        <DialogTitle id={resetTitleId}>{panel.resetConfirm.title}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>{panel.resetConfirm.body.replace('{tooth}', title)}</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmingReset(false)}>{panel.resetConfirm.cancel}</Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={() => {
+              onReset(tooth.fdi)
+              setConfirmingReset(false)
+            }}
+          >
+            {panel.resetConfirm.confirm}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Paper>
+  )
+}
+
+/** The small heading over a group of choices in a tooth panel. */
+function ChoiceHeading({ id, children }: { id: string; children: string }) {
+  return (
+    <Typography
+      id={id}
+      variant="caption"
+      component="h4"
+      color="text.secondary"
+      sx={{ display: 'block', fontWeight: 600, mb: 1 }}
+    >
+      {children}
+    </Typography>
+  )
+}
+
+/**
+ * One surface in the cross: its grade — the tile's whole point, so all five
+ * read at a glance — over its name. A dash, not a blank and not "C0", where
+ * nothing has been graded: unassessed is not the same as sound.
+ */
+function CariesSurfaceTile({
+  label,
+  grade,
+  ungraded,
+  selected,
+  cell,
+  onSelect,
+}: {
+  label: string
+  grade: CariesGrade | null
+  ungraded: string
+  selected: boolean
+  cell: string
+  onSelect: () => void
+}) {
+  return (
+    <ButtonBase
+      onClick={onSelect}
+      aria-pressed={selected}
+      aria-label={`${label}, ${grade ?? ungraded}`}
+      sx={{
+        gridArea: cell,
+        flexDirection: 'column',
+        alignItems: 'stretch',
+        gap: 0.25,
+        px: 1,
+        py: 1,
+        borderRadius: 1,
+        border: '1px solid',
+        borderColor: selected ? 'primary.main' : 'divider',
+        bgcolor: selected ? 'action.selected' : 'background.paper',
+        '&:hover': { borderColor: 'primary.main' },
+      }}
+    >
+      <Typography
+        variant="subtitle1"
+        sx={{ fontWeight: 700, color: grade ? 'error.dark' : 'text.disabled' }}
+      >
+        {grade ?? '—'}
+      </Typography>
+      <Typography
+        variant="caption"
+        sx={{ color: selected ? 'primary.main' : 'text.secondary', fontWeight: 600 }}
+      >
+        {label}
+      </Typography>
+    </ButtonBase>
+  )
+}
+
+/**
+ * An either/or question as ONE segmented control — MUI's ToggleButtonGroup,
+ * exclusive, the two halves joined, in its stock look with a tick on the
+ * chosen half. Pressing the chosen half again clears it
+ * (the group reports `null`), so an entry made by mistake can be taken back to
+ * "not recorded" rather than only swapped.
+ */
+function ToggleChoice<T extends string>({
+  title,
+  options,
+  value,
+  onChange,
+}: {
+  title: string
+  options: { id: T; label: string }[]
+  value: T | null
+  onChange: (value: T | null) => void
+}) {
+  const headingId = useId()
+  return (
+    <Box>
+      <ChoiceHeading id={headingId}>{title}</ChoiceHeading>
+      <ToggleButtonGroup
+        exclusive
+        fullWidth
+        size="small"
+        value={value}
+        onChange={(_, next: T | null) => onChange(next)}
+        aria-labelledby={headingId}
+      >
+        {options.map((option) => (
+          <ToggleButton
+            key={option.id}
+            value={option.id}
+            // Stock MUI selected state — no added border. The chosen half is
+            // marked by a tick before its label, at the label's own size, so
+            // the choice does not rest on the grey tint alone.
+            sx={{ py: 1, gap: 0.5, textTransform: 'none' }}
+          >
+            {value === option.id && <Icon name="check" size="inherit" />}
+            {option.label}
+          </ToggleButton>
+        ))}
+      </ToggleButtonGroup>
+    </Box>
+  )
+}
+
+/**
+ * A pick-one question with more than two answers, as a row of separate
+ * toggles under a heading. Pressing the chosen one again clears it.
+ */
+function ChoiceGroup<T extends string>({
+  title,
+  options,
+  value,
+  columns,
+  onChange,
+}: {
+  title: string
+  options: { id: T; label: string }[]
+  value: T | null
+  columns: number
+  onChange: (value: T | null) => void
+}) {
+  const headingId = useId()
+  return (
+    <Box role="group" aria-labelledby={headingId}>
+      <ChoiceHeading id={headingId}>{title}</ChoiceHeading>
+      <Box sx={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: 0.5 }}>
+        {options.map((option) => (
+          <ToggleButton
+            key={option.id}
+            value={option.id}
+            selected={value === option.id}
+            size="small"
+            onChange={() => onChange(value === option.id ? null : option.id)}
+            sx={{ py: 1, textTransform: 'none', borderRadius: 1, ...CHOSEN_TOGGLE_SX }}
+          >
+            {option.label}
+          </ToggleButton>
+        ))}
+      </Box>
+    </Box>
+  )
+}
+
+/*
+ * A chosen toggle has to be unmistakable: the stock selected state is a faint
+ * grey tint that vanishes on these panels. Brand border — doubled by an inset
+ * ring, so the button does not grow — brand text in bold, and a light brand
+ * wash. Three cues, none of them colour alone.
+ */
+const CHOSEN_TOGGLE_SX = {
+  '&.Mui-selected, &.Mui-selected:hover': {
+    borderColor: 'primary.main',
+    boxShadow: (theme: Theme) => `inset 0 0 0 1px ${theme.vars.palette.primary.main}`,
+    color: 'primary.main',
+    fontWeight: 700,
+    bgcolor: (theme: Theme) => `rgba(${theme.vars.palette.primary.mainChannel} / 0.06)`,
+  },
+} as const
+
 // ─── PERIO TOOTH PANEL ────────────────────────────────────────────────────
 
 /**
@@ -2364,47 +2800,35 @@ function PerioToothPanel({
   tooth,
   perio,
   reading,
-  dirty,
   activeSite,
   onSiteChange,
   teeth,
   onEdit,
-  onSave,
   onClose,
   onSelectTooth,
 }: {
   tooth: Tooth
   perio: PerioChart
-  /**
-   * The tooth as being edited — the draft if there is one, else what is saved.
-   * `undefined` means never probed — not "probed and all zero".
-   */
+  /** `undefined` means never probed — not "probed and all zero". */
   reading: PerioToothReading | undefined
-  /** Whether `reading` holds edits not yet saved. */
-  dirty: boolean
   /** The site in hand — owned by the parent, which also marks it on the arch. */
   activeSite: PerioSite
   onSiteChange: (site: PerioSite) => void
-  /** Every tooth currently on the arch, for the rail and Previous / Next. */
+  /** Every tooth currently on the arch, for the rail. */
   teeth: Tooth[]
+  /** Applied at once — there is no Save step. */
   onEdit: (fdi: number, site: PerioSite, change: Partial<PerioSiteReading>) => void
-  onSave: () => void
-  /** Both of these go through the unsaved-changes guard in the parent. */
   onClose: () => void
   onSelectTooth: (fdi: number) => void
 }) {
   const labels = perio.siteLabels[tooth.arch]
   const [activeMeasureId, setActiveMeasureId] = useState(perio.measures[0].id)
 
+  const conditionsId = useId()
   const measure = perio.measures.find((m) => m.id === activeMeasureId) ?? perio.measures[0]
   const site = reading?.sites[activeSite]
   const healthy = reading ? !hasPerioFindings(reading, perio.flagDepth) : false
 
-  // Previous / Next walk the same order the rail shows: ascending Universal.
-  const ordered = [...teeth].sort((a, b) => universalFromFdi(a.fdi) - universalFromFdi(b.fdi))
-  const index = ordered.findIndex((candidate) => candidate.fdi === tooth.fdi)
-  const previous = ordered[(index - 1 + ordered.length) % ordered.length]
-  const next = ordered[(index + 1) % ordered.length]
 
   return (
     <Paper
@@ -2414,41 +2838,27 @@ function PerioToothPanel({
       elevation={8}
       aria-label={`${perio.panel.titlePrefix} ${universalFromFdi(tooth.fdi)}${sideFromFdi(tooth.fdi)}`}
       sx={{
-        width: 468,
-        maxWidth: '100%',
+        width: '100%',
         flexShrink: 0,
         display: 'flex',
         overflow: 'hidden',
         borderRadius: 2,
       }}
     >
-      <PerioToothRail teeth={teeth} selectedFdi={tooth.fdi} perio={perio} onSelect={onSelectTooth} />
+      <ToothRail
+        teeth={teeth}
+        selectedFdi={tooth.fdi}
+        label={perio.panel.toothRail}
+        onSelect={onSelectTooth}
+      />
 
-      {/* `useFlexGap`: Stack's default spacing is a margin on each child, which
-          would override the footer's `mt: auto` and leave it floating mid-panel
-          instead of on the bottom edge. A gap leaves the margin free. */}
-      <Stack
-        spacing={2}
-        useFlexGap
-        sx={{ flexGrow: 1, minWidth: 0, p: 2.5, overflowY: 'auto' }}
-      >
-        {/* `flex-start`: the close button lines up with the top of the title,
-            not the middle of the two-line heading block. */}
-        <Stack direction="row" sx={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          {/* Both notations, as everywhere else a tooth is named: Universal 3
-              and FDI 3 are different teeth. */}
-          <Box>
-            <Typography variant="h5" component="h3" sx={{ fontWeight: 700 }}>
-              {`${perio.panel.titlePrefix} ${universalFromFdi(tooth.fdi)}${sideFromFdi(tooth.fdi)}`}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {`FDI ${tooth.fdi} · ${patientChart.odontogram.model.typeLabels[tooth.type]}`}
-            </Typography>
-          </Box>
-          <IconButton aria-label={perio.panel.close} onClick={onClose}>
-            <Icon name="close" size={22} />
-          </IconButton>
-        </Stack>
+      <Stack spacing={2} sx={{ flexGrow: 1, minWidth: 0, p: 2.5, overflowY: 'auto' }}>
+        <ToothPanelHeader
+          titlePrefix={perio.panel.titlePrefix}
+          tooth={tooth}
+          closeLabel={perio.panel.close}
+          onClose={onClose}
+        />
 
         {!reading ? (
           <Alert severity="info" variant="outlined">
@@ -2495,7 +2905,9 @@ function PerioToothPanel({
                   <Tab
                     key={option.id}
                     value={option.id}
-                    label={option.label}
+                    // The unit rides in the tab's name, so the bare numbers on
+                    // the pad below are never read without it.
+                    label={`${option.label} (${perio.unit})`}
                     sx={{
                       minHeight: 44,
                       color: 'text.secondary',
@@ -2513,86 +2925,51 @@ function PerioToothPanel({
               />
             </Box>
 
-            <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
-              {perio.conditions.map((condition) => {
-                const on = site?.conditions.includes(condition.id) ?? false
-                return (
-                  <ToggleButton
-                    key={condition.id}
-                    value={condition.id}
-                    selected={on}
-                    size="small"
-                    onChange={() => {
-                      if (!site) return
-                      onEdit(tooth.fdi, activeSite, {
-                        conditions: on
-                          ? site.conditions.filter((c) => c !== condition.id)
-                          : [...site.conditions, condition.id],
-                      })
-                    }}
-                    sx={{
-                      flex: '1 1 0',
-                      gap: 0.75,
-                      px: 1.5,
-                      textTransform: 'none',
-                      borderRadius: 1,
-                    }}
-                  >
-                    <ConditionDot condition={condition.id} filled={on} />
-                    {condition.label}
-                  </ToggleButton>
-                )
-              })}
-            </Stack>
+            <Box role="group" aria-labelledby={conditionsId}>
+              <Typography
+                id={conditionsId}
+                variant="caption"
+                component="h4"
+                color="text.secondary"
+                sx={{ display: 'block', fontWeight: 600, mb: 1 }}
+              >
+                {perio.panel.conditionsTitle}
+              </Typography>
+              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                {perio.conditions.map((condition) => {
+                  const on = site?.conditions.includes(condition.id) ?? false
+                  return (
+                    <ToggleButton
+                      key={condition.id}
+                      value={condition.id}
+                      selected={on}
+                      size="small"
+                      onChange={() => {
+                        if (!site) return
+                        onEdit(tooth.fdi, activeSite, {
+                          conditions: on
+                            ? site.conditions.filter((c) => c !== condition.id)
+                            : [...site.conditions, condition.id],
+                        })
+                      }}
+                      sx={{
+                        flex: '1 1 0',
+                        gap: 0.75,
+                        px: 1.5,
+                        textTransform: 'none',
+                        borderRadius: 1,
+                        ...CHOSEN_TOGGLE_SX,
+                      }}
+                    >
+                      <ConditionDot condition={condition.id} filled={on} />
+                      {condition.label}
+                    </ToggleButton>
+                  )
+                })}
+              </Stack>
+            </Box>
           </>
         )}
-
-        {/* Pushed to the bottom: a plain line of the readings as they stand in
-            the draft, then the three actions. No banner — the states that
-            need one are stated above the tiles. */}
-        <Stack spacing={1.5} sx={{ mt: 'auto', pt: 1 }}>
-          {/* Follows the controls above: the site picked in the tiles, the
-              measure picked in the tabs, and the conditions marked for that
-              site. With no readings at all it says so, never "fine". */}
-          <Typography variant="body2" color="text.secondary" aria-live="polite">
-            {site
-              ? [
-                  labels[activeSite],
-                  `${measure.label} ${site[measure.id]} ${perio.unit}`,
-                  site.conditions.length > 0
-                    ? perio.conditions
-                        .filter((condition) => site.conditions.includes(condition.id))
-                        .map((condition) => condition.label)
-                        .join(', ')
-                    : perio.panel.noConditions,
-                ].join(' · ')
-              : perio.panel.unprobedTitle}
-          </Typography>
-
-          <Stack direction="row" spacing={1}>
-            <Button
-              variant="outlined"
-              startIcon={<Icon name="previousTooth" size={20} />}
-              onClick={() => onSelectTooth(previous.fdi)}
-              sx={{ flex: '1 1 0' }}
-            >
-              {perio.panel.previousTooth}
-            </Button>
-            <Button
-              variant="outlined"
-              endIcon={<Icon name="nextTooth" size={20} />}
-              onClick={() => onSelectTooth(next.fdi)}
-              sx={{ flex: '1 1 0' }}
-            >
-              {perio.panel.nextTooth}
-            </Button>
-            {/* Enabled only with something to save, which doubles as the
-                "unsaved" cue. */}
-            <Button variant="contained" disabled={!dirty} onClick={onSave} sx={{ flex: '1 1 0' }}>
-              {perio.panel.save}
-            </Button>
-          </Stack>
-        </Stack>
       </Stack>
     </Paper>
   )
@@ -2775,15 +3152,24 @@ function PerioNumberPad({
  * two numbering systems on one screen, which is the single easiest way to
  * treat the wrong tooth.
  */
-function PerioToothRail({
+function ToothRail({
   teeth,
   selectedFdi,
-  perio,
+  label,
+  flagged,
+  flagLabel,
   onSelect,
 }: {
   teeth: Tooth[]
   selectedFdi: number
-  perio: PerioChart
+  /** Names the list for a screen reader. */
+  label: string
+  /**
+   * Teeth to mark with a dot — the ones that already carry what this panel
+   * charts. With `flagLabel`, which says the same in words after the number.
+   */
+  flagged?: ReadonlySet<number>
+  flagLabel?: string
   onSelect: (fdi: number) => void
 }) {
   const rail = useRef<HTMLUListElement>(null)
@@ -2854,7 +3240,7 @@ function PerioToothRail({
       <List
         ref={rail}
         dense
-        aria-label={perio.panel.toothRail}
+        aria-label={label}
         onScroll={measure}
         sx={{
           flexGrow: 1,
@@ -2867,13 +3253,20 @@ function PerioToothRail({
       >
         {ordered.map((tooth) => {
           const selected = tooth.fdi === selectedFdi
+          const flag = flagged?.has(tooth.fdi) ?? false
           return (
             <ListItemButton
               key={tooth.fdi}
               selected={selected}
               aria-current={selected ? 'true' : undefined}
+              aria-label={
+                flag && flagLabel
+                  ? `${universalFromFdi(tooth.fdi)}, ${flagLabel}`
+                  : undefined
+              }
               onClick={() => onSelect(tooth.fdi)}
               sx={{
+                position: 'relative',
                 justifyContent: 'center',
                 px: 0,
                 py: 0.75,
@@ -2895,6 +3288,24 @@ function PerioToothRail({
               <Typography variant="body2" sx={{ fontWeight: selected ? 700 : 500 }}>
                 {universalFromFdi(tooth.fdi)}
               </Typography>
+              {/* A dot beside the number for a tooth that already carries a
+                  finding — where to look first in a list of thirty-two. The
+                  row's label says the same in words. */}
+              {flag && (
+                <Box
+                  aria-hidden
+                  sx={{
+                    position: 'absolute',
+                    right: 6,
+                    top: '50%',
+                    width: 6,
+                    height: 6,
+                    mt: '-3px',
+                    borderRadius: '50%',
+                    bgcolor: 'warning.main',
+                  }}
+                />
+              )}
             </ListItemButton>
           )
         })}
@@ -2933,30 +3344,30 @@ function ArchSelector({
     <Stack
       role="group"
       aria-label="Arches shown"
-      direction="row"
-      spacing={0.5}
       sx={{
         // Sits on the pointer-transparent aside layer, so it re-arms itself.
         pointerEvents: 'auto',
-        p: 0.5,
         bgcolor: 'background.paper',
         border: (theme) => `1px solid ${theme.palette.divider}`,
+        // One segmented control: the segments fill the container edge to edge,
+        // with no inner padding and square corners of their own. Only the
+        // container is rounded, and it clips the end segments to that curve.
         borderRadius: 1.5,
+        overflow: 'hidden',
       }}
     >
       {views.map((view) => {
         const isActive = view === active
         return (
-          <Tooltip key={view} title={ARCH_VIEW_LABELS[view]}>
+          <Tooltip key={view} title={ARCH_VIEW_LABELS[view]} placement="right">
             <ButtonBase
               onClick={() => onChange(view)}
               aria-pressed={isActive}
               aria-label={ARCH_VIEW_LABELS[view]}
               sx={{
-                width: 44,
-                // Fills the row, which the header stretches to the menus' height.
-                height: '100%',
-                borderRadius: 1,
+                width: 48,
+                height: 36,
+                borderRadius: 0,
                 color: isActive ? 'primary.main' : 'text.disabled',
                 bgcolor: isActive ? 'action.selected' : 'transparent',
                 '&:hover': { bgcolor: isActive ? 'action.selected' : 'action.hover' },
@@ -2984,7 +3395,7 @@ function CornerAction({
   onClick?: (event: React.MouseEvent<HTMLElement>) => void
 }) {
   return (
-    <Tooltip title={item.label}>
+    <Tooltip title={item.label} placement="right">
       <IconButton
         aria-label={item.label}
         onClick={onClick}
@@ -2995,7 +3406,21 @@ function CornerAction({
           height: 52,
           color: 'text.disabled',
           border: (theme) => `1px solid ${theme.palette.divider}`,
-          '&:hover': { color: 'primary.main', borderColor: 'primary.main' },
+          /*
+           * Frosted, not solid and not see-through: these two float over the
+           * model, so a clear button let the teeth run straight through the
+           * glyph, and a white disc would punch a hole in the arch. A
+           * translucent paper fill with the model blurred behind it keeps the
+           * icon legible wherever the arch has been turned to.
+           */
+          bgcolor: (theme) => `rgba(${theme.vars.palette.background.paperChannel} / 0.6)`,
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
+          '&:hover': {
+            color: 'primary.main',
+            borderColor: 'primary.main',
+            bgcolor: (theme) => `rgba(${theme.vars.palette.background.paperChannel} / 0.8)`,
+          },
         }}
       >
         <Icon name={item.icon} size={24} />
@@ -3036,7 +3461,7 @@ function gesturesFor(help: ChartHelp, selectHint: string | null) {
 
 /**
  * The one-time tip on a first visit: every gesture on one line, beside the
- * "?" that holds them for good. Dismissing it — or opening the full help —
+ * control strip whose "?" holds them for good. Dismissing it — or opening the full help —
  * stores that it was seen.
  */
 function ChartTip({
@@ -3085,10 +3510,11 @@ function ChartHelpPopover({
       open={Boolean(anchor)}
       anchorEl={anchor}
       onClose={onClose}
-      anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-      transformOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      // Opens to the RIGHT of the control strip, which stands on the card's left edge.
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
       slotProps={{
-        paper: { role: 'dialog', 'aria-label': help.title, sx: { mt: -1, p: 2.5, width: 300 } },
+        paper: { role: 'dialog', 'aria-label': help.title, sx: { ml: 1.5, p: 2.5, width: 300 } },
       }}
     >
       <Typography variant="subtitle2" component="h3" sx={{ mb: 1.5 }}>
@@ -3121,7 +3547,43 @@ function ChartHelpPopover({
 
 // ─── SCREEN ───────────────────────────────────────────────────────────────
 
-export default function PatientChart() {
+export default function PatientChart({
+  onOpenPatients,
+}: {
+  /** Leaves the record for the Patients list — the breadcrumb and the rail both call it. */
+  onOpenPatients: () => void
+}) {
+  /*
+   * Keep a trackpad pinch from zooming the PAGE.
+   *
+   * On the 3D canvas a pinch zooms the model — OrbitControls takes the
+   * gesture. Anywhere else it went to the browser: the whole page magnified by
+   * a few percent and slid sideways, the app rail went off the left edge — its
+   * box still 88px wide, its icons cut in half — and with scrollbars hidden
+   * and no API to reset a pinch-zoom, there was no visible way back.
+   *
+   * On the whole screen rather than just the chart card, because a pinch aimed
+   * at the model routinely starts a few pixels outside it. Browser zoom
+   * (Cmd/Ctrl +/−) is untouched, which is the zoom people who need larger text
+   * rely on, and unlike a pinch it reflows the layout instead of cropping it.
+   */
+  useEffect(() => {
+    // Chrome and Firefox report a trackpad pinch as a wheel event with ctrlKey.
+    const stopPinch = (event: WheelEvent) => {
+      if (event.ctrlKey) event.preventDefault()
+    }
+    // Safari reports it as its own gesture events instead.
+    const stopGesture = (event: Event) => event.preventDefault()
+    document.addEventListener('wheel', stopPinch, { passive: false })
+    document.addEventListener('gesturestart', stopGesture)
+    document.addEventListener('gesturechange', stopGesture)
+    return () => {
+      document.removeEventListener('wheel', stopPinch)
+      document.removeEventListener('gesturestart', stopGesture)
+      document.removeEventListener('gesturechange', stopGesture)
+    }
+  }, [])
+
   return (
     <Box
       sx={{
@@ -3138,12 +3600,22 @@ export default function PatientChart() {
          * bounded box to frame the arch against.
          */
         height: '100vh',
-        overflow: 'hidden',
+        // `clip`, not `hidden`: a hidden box can still be SCROLLED — by focus
+        // landing on something past its edge, or a script — which slides the
+        // whole page sideways and takes the rail off-screen with no scrollbar
+        // to bring it back. A clipped box cannot scroll at all.
+        overflow: 'clip',
         bgcolor: 'background.default',
         color: 'text.primary',
       }}
     >
-      <Rail />
+      <Rail
+        rail={patientChart.rail}
+        // `patients` is the only rail item with a screen behind it so far.
+        onSelect={(id) => {
+          if (id === 'patients') onOpenPatients()
+        }}
+      />
       <Stack
         direction="row"
         sx={{
@@ -3158,7 +3630,7 @@ export default function PatientChart() {
           gap: (theme) => theme.spacing((theme.layout.gutter * 2) / 3),
         }}
       >
-        <PatientSidebar />
+        <PatientSidebar onOpenPatients={onOpenPatients} />
         <ChartPanel />
       </Stack>
     </Box>

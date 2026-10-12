@@ -74,8 +74,8 @@ export type IconName =
   | 'dropdown'
   // perio tooth panel
   | 'close'
-  | 'previousTooth'
-  | 'nextTooth'
+  | 'check'
+  | 'reset'
 
 // ─── APP RAIL ─────────────────────────────────────────────────────────────
 
@@ -475,28 +475,9 @@ export interface PerioChart {
   panel: {
     titlePrefix: string
     close: string
-    previousTooth: string
-    nextTooth: string
-    /** Commits the tooth's edits; nothing reaches the chart until then. */
-    save: string
-    /**
-     * The guard shown when leaving a tooth with unsaved edits — by Previous,
-     * Next, the rail, closing, or anything else that changes the selection.
-     * `{tooth}` in `body` is replaced with the tooth's name.
-     */
-    unsaved: {
-      title: string
-      body: string
-      keepEditing: string
-      discard: string
-      saveAndContinue: string
-    }
     toothRail: string
-    /**
-     * Ends the panel's summary line when the site in hand has none of the four
-     * conditions marked. States what was RECORDED, not that the site is well.
-     */
-    noConditions: string
+    /** Heading over the four condition toggles (bleeding, plaque, pus, tartar). */
+    conditionsTitle: string
     /** Shown when the tooth has no readings at all — never probed. */
     unprobedTitle: string
     unprobedBody: string
@@ -619,6 +600,57 @@ export interface CariesFinding {
   plan: string
 }
 
+/** How far into the tooth the lesion has reached on one surface. */
+export type CariesTissue = 'dentin' | 'enamel'
+
+/** Whether that surface has broken down into a cavity. */
+export type CariesCavitation = 'cavitated' | 'intact'
+
+/**
+ * The severity grade recorded per surface.
+ *
+ * ⚠️ The C1–C4 labels are carried over from the previous product's caries
+ * form. What each grade means clinically — and how it relates to the ICDAS
+ * code a finding also carries — is a clinician's definition, not this file's.
+ */
+export type CariesGrade = 'C1' | 'C2' | 'C3' | 'C4'
+
+/** What is to be done about the tooth's lesions. */
+export type CariesDecision = 'monitor' | 'treat'
+
+/**
+ * What is recorded for ONE surface. Each part is independent and may be unset:
+ * a surface with nothing set has not been assessed, which is not the same as
+ * a surface assessed and found sound.
+ */
+export interface CariesSurfaceAssessment {
+  tissue: CariesTissue | null
+  cavitation: CariesCavitation | null
+  grade: CariesGrade | null
+}
+
+/**
+ * One tooth's caries assessment, as the dental panel edits it.
+ *
+ * Per SURFACE, because a tooth can carry lesions of different depth on
+ * different faces — the panel's five tiles each show their own grade for
+ * exactly that reason. `decision` is per tooth: one plan for the tooth.
+ */
+export interface CariesToothAssessment {
+  fdi: number
+  surfaces: Partial<Record<CariesSurface, CariesSurfaceAssessment>>
+  decision: CariesDecision | null
+}
+
+/** The five surfaces in the order the panel lays them out, as a cross. */
+export const CARIES_SURFACE_ORDER: CariesSurface[] = [
+  'buccal',
+  'mesial',
+  'occlusal',
+  'distal',
+  'lingual',
+]
+
 export interface CariesChart {
   /** Stated on screen — see the warning above. */
   disclaimer: string
@@ -640,6 +672,48 @@ export interface CariesChart {
     plan: string
   }
   findings: CariesFinding[]
+  /** Copy and option lists for the panel that opens on the Dental tab. */
+  panel: {
+    titlePrefix: string
+    close: string
+    surfacesTitle: string
+    tissueTitle: string
+    cavitationTitle: string
+    gradeTitle: string
+    /** Names the footer's two buttons as a group. */
+    decisionTitle: string
+    tissues: { id: CariesTissue; label: string }[]
+    cavitations: { id: CariesCavitation; label: string }[]
+    grades: { id: CariesGrade; label: string }[]
+    /**
+     * `notice` is what the chart announces once the decision is made;
+     * `{tooth}` is replaced with the tooth's name.
+     */
+    decisions: { id: CariesDecision; label: string; notice: string }[]
+    /** Names the notice's close button. */
+    dismissNotice: string
+    /** Names the tooth list down the panel's left side. */
+    toothRail: string
+    /** Read out, after its number, for a tooth in that list that carries a finding. */
+    toothRailFlag: string
+    /** Read out for a tile that has no grade yet; the tile shows a dash. */
+    ungraded: string
+    /**
+     * Two surfaces are named by where the tooth is: the tongue side of an
+     * UPPER tooth faces the palate, and an ANTERIOR tooth bites on an incisal
+     * edge rather than an occlusal table. The keys stay `lingual`/`occlusal`.
+     */
+    surfaceLabelOverrides: { upperLingual: string; anteriorOcclusal: string }
+    /** Clears everything recorded for the tooth — asks first. */
+    reset: string
+    /** The confirmation it asks with. `{tooth}` is replaced with the tooth's name. */
+    resetConfirm: { title: string; body: string; cancel: string; confirm: string }
+  }
+  /**
+   * The per-surface assessment for each carious tooth — what the panel opens
+   * with and edits. One entry per tooth in `findings`.
+   */
+  assessments: CariesToothAssessment[]
 }
 
 /**
@@ -1412,18 +1486,8 @@ export const patientChart: PatientChartScreen = {
       panel: {
         titlePrefix: 'Tooth',
         close: 'Close tooth details',
-        previousTooth: 'Previous',
-        nextTooth: 'Next',
-        save: 'Save',
-        unsaved: {
-          title: 'Save changes?',
-          body: '{tooth} has readings that are not saved yet. Leaving now will lose them.',
-          keepEditing: 'Keep editing',
-          discard: 'Discard',
-          saveAndContinue: 'Save and continue',
-        },
         toothRail: 'Select a tooth',
-        noConditions: 'No conditions marked',
+        conditionsTitle: 'Findings',
         unprobedTitle: 'Not yet probed',
         unprobedBody:
           'No periodontal readings have been recorded for this tooth in the current exam.',
@@ -1543,6 +1607,63 @@ export const patientChart: PatientChartScreen = {
           note: 'Staining along the central groove, heaviest in the distal fossa. Catches on the probe.',
           detectedOn: '12.11.22',
           plan: 'Restoration planned — not yet scheduled',
+        },
+      ],
+      panel: {
+        titlePrefix: 'Tooth',
+        close: 'Close tooth details',
+        surfacesTitle: 'Surfaces',
+        tissueTitle: 'Depth',
+        cavitationTitle: 'Cavitation',
+        gradeTitle: 'Grade',
+        decisionTitle: 'Decision',
+        tissues: [
+          { id: 'dentin', label: 'Dentin' },
+          { id: 'enamel', label: 'Enamel' },
+        ],
+        cavitations: [
+          { id: 'cavitated', label: 'Cavitation' },
+          { id: 'intact', label: 'No cavitation' },
+        ],
+        grades: [
+          { id: 'C1', label: 'C1' },
+          { id: 'C2', label: 'C2' },
+          { id: 'C3', label: 'C3' },
+          { id: 'C4', label: 'C4' },
+        ],
+        decisions: [
+          { id: 'monitor', label: 'Monitor', notice: '{tooth} is set to be monitored' },
+          { id: 'treat', label: 'Treat', notice: '{tooth} needs treatment' },
+        ],
+        dismissNotice: 'Dismiss',
+        toothRail: 'Select a tooth',
+        toothRailFlag: 'caries charted',
+        ungraded: 'Not graded',
+        surfaceLabelOverrides: { upperLingual: 'Palatal', anteriorOcclusal: 'Incisal' },
+        reset: 'Reset',
+        resetConfirm: {
+          title: 'Reset caries details?',
+          body: 'Everything recorded for {tooth} — every surface and the decision — will be cleared.',
+          cancel: 'Cancel',
+          confirm: 'Reset',
+        },
+      },
+      /*
+       * Seeded to agree with the two findings above: both occlusal, both "into
+       * dentin, no cavitation", both planned for restoration. The C2 grade is a
+       * PLACEHOLDER chosen to sit with that wording — it was not derived from
+       * the ICDAS code, and a clinician decides how the two scales map.
+       */
+      assessments: [
+        {
+          fdi: 16,
+          surfaces: { occlusal: { tissue: 'dentin', cavitation: 'intact', grade: 'C2' } },
+          decision: 'treat',
+        },
+        {
+          fdi: 34,
+          surfaces: { occlusal: { tissue: 'dentin', cavitation: 'intact', grade: 'C2' } },
+          decision: 'treat',
         },
       ],
     },

@@ -17,8 +17,9 @@ Stack: **React 19 + Vite + MUI 9 (Material UI)**, TypeScript, **npm**. Emotion i
 Icons: **@mui/icons-material**, Outlined style, referenced by SEMANTIC KEY through an `ICONS`
 record — never imported straight into markup. App code lives at the repo root; run `npm run dev`.
 
-**Adding or changing an icon:** add the key to the `ICONS` map in the screen that owns it
-(`src/screens/PatientChart.tsx` holds the canonical one) and use the key from the dataset. The map
+**Adding or changing an icon:** add the key to the `ICONS` map in `src/components/Icon.tsx` (the
+canonical one, shared by every screen) and to `IconName` in `src/data/patientChart.ts`, then use the
+key from the dataset. The map
 is the single source of truth — that's what makes an icon swap one edit instead of nineteen. Size
 comes from `fontSize`, never `width`/`height`: the SVG renders at `1em` with `fill="currentColor"`,
 so `color` and font-size cascade normally.

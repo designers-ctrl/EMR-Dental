@@ -100,8 +100,8 @@ throws at render. The Storybook wraps its whole tree in one; a product screen us
 declare its own, since there is no shared shell.
 
 **What this project deliberately does NOT have:** no router, no state library, no `src/api/` layer,
-no mock server, no test runner, no `src/components/` folder. Don't assume any of them exist; if a
-task needs one, say so rather than inventing the wiring.
+no mock server, no test runner. Don't assume any of them exist; if a task needs one, say so rather
+than inventing the wiring.
 
 ### Boot chain
 
@@ -114,9 +114,12 @@ import the weight files independently. All three must move together or the brows
 back to Helvetica. **300 is not optional**: MUI's stock `h1`/`h2` ask for it, and without the file
 the browser synthesizes a thinner-looking fake. See **mui-ds → Type** for the full rule.
 
-`src/App.tsx` renders **one screen directly** (`PatientChart`) with no chrome above it — the screen
-brings its own rail and header. There is no router: to bring another screen up, swap the render in
-`App.tsx`.
+`src/App.tsx` holds **which of the two screens is up** — `PatientChart` (the default) or `Patients`
+— as one `useState`, with no chrome above them; each screen brings its own rail and header. There is
+still no router: screens change through callbacks (`onOpenPatients` from the chart's breadcrumb and
+rail, `onOpenChart` from a row in the list), so the URL never changes and Back/reload land on the
+chart. A third screen, or a need for links, is the point to add a real router rather than grow
+that state.
 
 ⚠️ **`defaultMode` is not `defaultColorScheme`.** The theme's `defaultColorScheme: 'light'` picks
 which scheme owns the `:root` CSS block; `defaultMode` is a **ThemeProvider prop** that decides what
@@ -137,17 +140,17 @@ per-component prop names.
 
 ### How screens are composed
 
-There is **no shared shell wrapper**. Each screen is self-contained and declares its own chrome.
-Reusable pieces currently live as **local functions inside the screen that uses them** —
-`PatientChart.tsx` defines `Icon`, `Rail`, `RailButton`, `PatientHeader`, `ChartPanel` and others,
-none exported (`PatientChart` itself is the file's only export).
+There is **no shared shell wrapper**. Each screen is self-contained and declares its own chrome —
+it mounts `<Rail>` itself. What two screens both need lives in **`src/components/`**: `Icon.tsx`
+(the canonical `ICONS` record and `<Icon>`) and `Rail.tsx` (the app rail). Everything else is still
+a **local function inside the screen that uses it** — `PatientChart.tsx` defines `PatientSidebar`,
+`ChartPanel` and others, `Patients.tsx` defines `PatientList` and `DaySchedulePanel`, none exported
+(the screen is each file's only export).
 
-⚠️ **The `ICONS` record is defined twice** — `PatientChart.tsx` and `Storybook.tsx` each declare
-their own, with different key sets. `PatientChart.tsx` holds the canonical one. That duplication is
-the signal that a shared `src/components/` layer is due; extract `ICONS` there first and update both
-call sites. (The two files also disagree on icon import style — `PatientChart` deep-imports each
-glyph, `Storybook` pulls them from the `@mui/icons-material` barrel. Deep imports are correct; see
-`react-performance` → `bundle-barrel-imports`.)
+⚠️ **`Storybook.tsx` still declares its own `ICONS`**, with a different key set, pulled from the
+`@mui/icons-material` barrel. `src/components/Icon.tsx` is the canonical one and deep-imports each
+glyph, which is correct (see `react-performance` → `bundle-barrel-imports`). Fold the Storybook's
+record into it when that file next changes.
 
 Several files sit in `src/screens/` but are really reusable visuals or helpers, not screens:
 `ArchGlyph.tsx`, `ToothArch.tsx`, `ToothStudio.tsx` and `toothScene.ts` — all reached through
@@ -157,9 +160,9 @@ Several files sit in `src/screens/` but are really reusable visuals or helpers, 
 
 | Building… | Goes in | Notes |
 |---|---|---|
-| A **full screen / page** | `src/screens/` | One `.tsx` per screen; it declares its own chrome. Swap `App.tsx` to view it. |
+| A **full screen / page** | `src/screens/` | One `.tsx` per screen; it declares its own chrome. Add it to the `Screen` state in `App.tsx`. |
 | A **screen's dataset** | `src/data/<screen>.ts` | A typed contract + a synthetic data object. See the house rule below. |
-| A **reusable component** | `src/components/` | Doesn't exist yet — create it when you extract the first shared piece (start with `ICONS`). |
+| A **reusable component** | `src/components/` | Holds `Icon.tsx` and `Rail.tsx`. Move a piece here when a second screen needs it, not before. |
 | A **chart** | inline in the screen | From `@mui/x-charts`; colours come from the theme. Add it to the Storybook's Data viz section. |
 | **Storybook content** | `src/data/storybook.ts` | The Storybook view is a pure projection of this. |
 
@@ -182,7 +185,11 @@ Several files sit in `src/screens/` but are really reusable visuals or helpers, 
   of what MUI lacks, so a component's absence here says nothing either way.
 - `src/data/storybook.ts` — everything the Storybook renders that isn't a live component: the edit
   map, the scale tables, the chart data.
-- `src/data/patientChart.ts` — the main product dataset (rail, patient fields, all 32 teeth).
+- `src/data/patientChart.ts` — the main product dataset (rail, patient fields, all 32 teeth). Also
+  owns the `IconName` type that `src/components/Icon.tsx` maps to glyphs.
+- `src/data/patients.ts` — the Patients list dataset (rows, filters, the day schedule). A row opens
+  the chart only when its `id` matches `patientChart.patient.id` (`hasChart`) — one synthetic record
+  exists, and no other row may open it under another name.
 - `src/data/toothModels.ts` — per-tooth measurements and the node names inside `teeth.glb`.
 - **The odontogram is a single 3D arch.** `src/assets/teeth/teeth.glb` (32 separated meshes) is
   loaded by `src/screens/toothScene.ts` and rendered by `ToothArch.tsx` via @react-three/fiber —

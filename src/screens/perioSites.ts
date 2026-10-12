@@ -1,6 +1,6 @@
 import { Matrix4, Quaternion, Vector3 } from 'three'
 
-import type { PerioSite } from '../data/patientChart.ts'
+import type { CariesSurface, PerioSite } from '../data/patientChart.ts'
 import { ARCH_BOUNDS, toothModelByFdi, type ToothModel } from '../data/toothModels.ts'
 
 /**
@@ -100,6 +100,61 @@ export function siteDirection(model: ToothModel, site: PerioSite): Vector3 {
   const corner = Math.atan2(model.size.width, model.size.depth)
   const off = mesial === 0 ? 0 : corner * LINE_ANGLE_SHARE
   return new Vector3(x * Math.sin(off), 0, z * Math.cos(off))
+}
+
+/**
+ * Which way one of the crown's five surfaces faces, in the tooth's own axes.
+ *
+ * The four sides lie in the local XZ plane — cheek or tongue side on ±Z, mesial
+ * or distal on ±X, signs derived as above. The biting surface faces away from
+ * the root along the long axis: the export stands each tooth with its biting
+ * tip at the origin and its root running +Y for uppers, −Y for lowers.
+ */
+export function toothSurfaceDirection(model: ToothModel, surface: CariesSurface): Vector3 {
+  const facial = facialDirection(model).z
+  const mesial = mesialSign(model)
+  switch (surface) {
+    case 'buccal':
+      return new Vector3(0, 0, facial)
+    case 'lingual':
+      return new Vector3(0, 0, -facial)
+    case 'mesial':
+      return new Vector3(mesial, 0, 0)
+    case 'distal':
+      return new Vector3(-mesial, 0, 0)
+    case 'occlusal':
+      return new Vector3(0, model.arch === 'upper' ? -1 : 1, 0)
+  }
+}
+
+/**
+ * How far a proximal view is swung towards the cheek side. Dead square on to a
+ * mesial or distal surface, the camera would stand where the neighbouring
+ * tooth is and see only that; a three-quarter view from the cheek side shows
+ * the surface past it.
+ */
+const PROXIMAL_SWING = 0.75
+
+/** Keeps the biting-surface view a hair off the long axis — see below. */
+const BITING_TILT = 0.2
+
+/**
+ * Where to look at a surface FROM, in the tooth's own axes — the surface's own
+ * direction for the cheek and tongue sides, adjusted for the other three:
+ *
+ *   - mesial / distal: swung towards the cheek side (PROXIMAL_SWING).
+ *   - biting surface: tipped slightly towards the cheek side, because a camera
+ *     looking exactly along the vertical has no defined "up" for the orbit
+ *     controls and the view would spin.
+ */
+export function toothSurfaceView(model: ToothModel, surface: CariesSurface): Vector3 {
+  const direction = toothSurfaceDirection(model, surface)
+  const facial = facialDirection(model)
+  if (surface === 'mesial' || surface === 'distal') {
+    return direction.addScaledVector(facial, PROXIMAL_SWING).normalize()
+  }
+  if (surface === 'occlusal') return direction.addScaledVector(facial, BITING_TILT).normalize()
+  return direction
 }
 
 /** The angle a direction makes round the long axis, as the gingival ring indexes it. */

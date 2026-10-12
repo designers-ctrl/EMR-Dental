@@ -12,11 +12,14 @@ import { Canvas, invalidate, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import {
   BackSide,
+  Color,
   MeshBasicMaterial,
   MOUSE,
   NeutralToneMapping,
   type PerspectiveCamera,
   Quaternion,
+  ShaderMaterial,
+  Vector2,
   Vector3,
 } from 'three'
 import Box from '@mui/material/Box'
@@ -34,6 +37,7 @@ import {
   sideFromFdi,
   universalFromFdi,
   type CariesChart,
+  type CariesSurface,
   type EndoChart,
   type ImplantChart,
   type PerioChart,
@@ -54,12 +58,19 @@ import {
   pocketGeometry,
   pulpWindowEnamel,
   ringHeightAt,
+  ringNeck,
   ringRadiusAt,
   useGingivalRings,
   useToothGeometries,
 } from './toothScene.ts'
 import { Studio } from './ToothStudio.tsx'
-import { ringAngle, seatSite, siteDirection } from './perioSites.ts'
+import {
+  ringAngle,
+  seatSite,
+  siteDirection,
+  toothSurfaceDirection,
+  toothSurfaceView,
+} from './perioSites.ts'
 
 /**
  * The dentition as it actually sits in the jaw — the whole odontogram.
@@ -288,6 +299,13 @@ function focusPose(camera: PerspectiveCamera, fdi: number, distance: number) {
 interface SiteFocus {
   target: Vector3
   direction: Vector3
+  /**
+   * Turn to face it WITHOUT changing how close the camera is — for a move
+   * between views of the same tooth, where a jump in scale would read as the
+   * tooth changing size. Left off, the flight goes to the standard focused
+   * distance.
+   */
+  keepRange?: boolean
 }
 
 /** The marker's dot and its white halo, metres. ~1 mm across, so it reads on any tooth. */
@@ -353,11 +371,13 @@ function SiteMarker({
     return () => onFocus(null)
   }, [pose, onFocus])
 
-  // Brand dot with a white halo drawn from its BACK faces, so it reads as an
-  // outlined point against enamel and gum alike. Unlit: a marker, not a material.
+  // A neutral grey dot — MUI's own grey scale, so it does not spend the brand
+  // colour on the model — with a white halo drawn from its BACK faces, so it
+  // reads as an outlined point against enamel and gum alike. Unlit: a marker,
+  // not a material.
   const dot = useMemo(
-    () => new MeshBasicMaterial({ color: theme.palette.primary.main, toneMapped: false }),
-    [theme.palette.primary.main],
+    () => new MeshBasicMaterial({ color: theme.palette.grey[600], toneMapped: false }),
+    [theme.palette.grey],
   )
   const halo = useMemo(
     () => new MeshBasicMaterial({ color: '#ffffff', side: BackSide, toneMapped: false }),
@@ -380,6 +400,167 @@ function SiteMarker({
       <mesh material={dot} raycast={() => null}>
         <sphereGeometry args={[SITE_DOT, 24, 16]} />
       </mesh>
+    </group>
+  )
+}
+
+// ─── CROWN SURFACE ────────────────────────────────────────────────────────
+
+/** Width of the outline round a picked surface, metres. ~0.3 mm: a line, not a band. */
+const SURFACE_LINE = 0.0003
+
+/** How much of the crown, measured from the biting tip, counts as its biting surface. */
+const OCCLUSAL_SHARE = 0.22
+
+/** Where the side surfaces stop short of the gum line, as a share of the crown. */
+const CERVICAL_SHARE = 0.96
+
+/** Half the angle one side surface spans round the tooth — a touch under a quarter turn. */
+const SURFACE_HALF_ANGLE = 0.74
+
+/**
+ * The outline shader.
+ *
+ * Drawn over the tooth's OWN mesh, so the line follows the real crown rather
+ * than a box round it. A surface is a region of the crown — a quarter of the
+ * way round its long axis for the four sides, the cap nearest the bite for the
+ * biting surface — and only a thin band just inside that region's edge is
+ * painted. Everything else is discarded, which is what leaves the enamel, a
+ * caries stain and every other mark on the tooth exactly as visible as before.
+ *
+ * Distances to the edge are worked out in METRES (arc length round the axis,
+ * height along it), so the line keeps one width all the way round instead of
+ * thinning where the crown narrows.
+ */
+const SURFACE_VERTEX = /* glsl */ `
+  varying vec3 vLocal;
+  void main() {
+    vLocal = position;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`
+
+const SURFACE_FRAGMENT = /* glsl */ `
+  uniform vec3 uColor;
+  uniform float uOpacity;
+  uniform vec2 uDir;       // the surface's direction round the long axis (local x, z)
+  uniform float uAxis;     // +1 upper, -1 lower: which way the root runs along local y
+  uniform float uCrown;    // crown height, biting tip to gum line
+  uniform float uBiting;   // 1 for the biting surface, 0 for a side
+  uniform float uLine;
+  uniform float uHalf;
+  uniform float uOcclusal;
+  uniform float uCervical;
+  varying vec3 vLocal;
+
+  void main() {
+    // Distance from the biting tip towards the root.
+    float h = vLocal.y * uAxis;
+    float inside;
+
+    if (uBiting > 0.5) {
+      inside = uCrown * uOcclusal - h;
+    } else {
+      float r = length(vLocal.xz);
+      vec2 d = r > 1e-6 ? vLocal.xz / r : uDir;
+      float off = acos(clamp(dot(d, uDir), -1.0, 1.0));
+      float arc = (uHalf - off) * r;
+      inside = min(arc, min(h - uCrown * uOcclusal, uCrown * uCervical - h));
+    }
+
+    // Only the band just inside the edge: 0 at the edge, 1 a line-width in.
+    float m = inside / uLine;
+    if (m <= 0.0 || m >= 1.0) discard;
+    float alpha = smoothstep(0.0, 0.25, m) * (1.0 - smoothstep(0.75, 1.0, m));
+    gl_FragColor = vec4(uColor, alpha * uOpacity);
+  }
+`
+
+/**
+ * The crown surface picked in the dental panel: a light grey outline on the
+ * tooth, and the camera pose that turns that surface to face the viewer.
+ *
+ * Both come from the tooth's own anatomy (`toothSurfaceDirection`), so "buccal"
+ * is wherever THIS tooth's cheek side actually is in the arch — an incisor's
+ * faces forward, a molar's faces sideways — never a fixed axis of the scene.
+ *
+ * Only one surface is ever outlined: the outline is this component, and it
+ * renders whichever surface it is given.
+ */
+function SurfaceMarker({
+  fdi,
+  surface,
+  onFocus,
+}: {
+  fdi: number
+  surface: CariesSurface
+  onFocus: (focus: SiteFocus | null) => void
+}) {
+  const geometries = useToothGeometries()
+  const rings = useGingivalRings()
+  const theme = useTheme()
+  const model = toothModelByFdi[fdi]
+  const geometry = geometries.get(model.node)
+  const ring = rings.get(model.node)
+  const axis = model.arch === 'upper' ? 1 : -1
+  // Biting tip (local y = 0) to the gum line. Without a traced ring, the
+  // anatomical rule of thumb stands in: the crown is about a third of a tooth.
+  const crown = ring ? Math.abs(ringNeck(ring, axis).y) : (model.size.height / 1000) * 0.35
+
+  const material = useMemo(() => {
+    const direction = toothSurfaceDirection(model, surface)
+    return new ShaderMaterial({
+      vertexShader: SURFACE_VERTEX,
+      fragmentShader: SURFACE_FRAGMENT,
+      uniforms: {
+        uColor: { value: new Color(theme.palette.grey[500]) },
+        uOpacity: { value: 0.9 },
+        uDir: { value: new Vector2(direction.x, direction.z) },
+        uAxis: { value: axis },
+        uCrown: { value: crown },
+        uBiting: { value: surface === 'occlusal' ? 1 : 0 },
+        uLine: { value: SURFACE_LINE },
+        uHalf: { value: SURFACE_HALF_ANGLE },
+        uOcclusal: { value: OCCLUSAL_SHARE },
+        uCervical: { value: CERVICAL_SHARE },
+      },
+      transparent: true,
+      depthWrite: false,
+      // Pulled a hair towards the camera so it wins the depth test against the
+      // enamel (and the hover wash) it lies on.
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+      toneMapped: false,
+    })
+  }, [model, surface, axis, crown, theme.palette.grey])
+  useEffect(() => () => material.dispose(), [material])
+
+  useEffect(() => {
+    // The tooth stays in the middle: aim at its own centre, half-way along its
+    // long axis, and look back along the picked surface's view direction.
+    const centre = new Vector3(0, (axis * model.size.height) / 2000, 0)
+    const { point, outward } = seatSite(model, centre, toothSurfaceView(model, surface))
+    // Side views get the same small lift every focused view has. The biting
+    // surface is looked at along the tooth's axis, so it is left as it is.
+    const direction =
+      surface === 'occlusal' ? outward : outward.setY(0).normalize().setY(FOCUS_LIFT).normalize()
+    onFocus({ target: point, direction, keepRange: true })
+    return () => onFocus(null)
+  }, [model, surface, axis, onFocus])
+
+  if (!geometry) return null
+  return (
+    // The same offset the arch group applies, so the outline sits on its tooth.
+    <group position={[-CENTRE[0], -CENTRE[1], -CENTRE[2]]}>
+      <mesh
+        geometry={geometry}
+        position={model.archPosition}
+        quaternion={model.archRotation}
+        material={material}
+        renderOrder={9}
+        raycast={() => null}
+      />
     </group>
   )
 }
@@ -553,6 +734,13 @@ function Orbit({
     // exactly where it is (see above).
     const releasedOnly =
       focusSite === null && last.current.site !== null && focusFdi === last.current.fdi
+    // Turning between two views of the tooth already in focus keeps whatever
+    // distance the camera is at — including one the user has zoomed to. A
+    // newly opened tooth still flies to the standard focused distance.
+    const holdRange =
+      focusSite?.keepRange === true &&
+      last.current.site !== null &&
+      focusFdi === last.current.fdi
     last.current = { fdi: focusFdi, site: focusSite }
     if (releasedOnly) return
 
@@ -575,7 +763,12 @@ function Orbit({
               target: focusSite.target.clone(),
               position: focusSite.target
                 .clone()
-                .addScaledVector(focusSite.direction, framedDistance.current * zoom),
+                .addScaledVector(
+                  focusSite.direction,
+                  holdRange
+                    ? camera.position.distanceTo(orbit.target)
+                    : framedDistance.current * zoom,
+                ),
             }
           : focusPose(camera as PerspectiveCamera, focusFdi, framedDistance.current * zoom)
 
@@ -1118,12 +1311,14 @@ export function ToothArch3D({
   perio = null,
   perioReadings = [],
   caries,
+  cariesGrades,
   implants,
   endo = null,
   postCore,
   zoom = 1,
   focusFdi = null,
   focusSite = null,
+  focusSurface = null,
   viewDirection,
   show,
   onSelect,
@@ -1136,6 +1331,8 @@ export function ToothArch3D({
   perioReadings?: PerioToothReading[]
   /** Carious lesions. Always supplied — the stain is not tab-scoped. */
   caries: CariesChart
+  /** The grades recorded on each carious tooth's surfaces, shown in its badge. */
+  cariesGrades?: ReadonlyMap<number, readonly string[]>
   /** Implant fixtures. Always supplied — hardware is not tab-scoped either. */
   implants: ImplantChart
   /** The endo overlay, or `null` off the endo chart. */
@@ -1154,6 +1351,12 @@ export function ToothArch3D({
    * on the gum line, and the camera turns to face it.
    */
   focusSite?: PerioSite | null
+  /**
+   * The crown surface picked in the dental panel, on the `focusFdi` tooth.
+   * Outlined on the tooth, and the camera turns it to face the viewer. Never
+   * set together with `focusSite` — the two belong to different chart tabs.
+   */
+  focusSurface?: CariesSurface | null
   /** Where the View menu is pointing the camera, in the arch's own axes. */
   viewDirection: readonly [number, number, number]
   /** Which marks to draw, already resolved from the Chart Layers menu. */
@@ -1263,11 +1466,14 @@ export function ToothArch3D({
                 onFocus={setSiteFocus}
               />
             )}
+            {focusFdi !== null && focusSurface && (
+              <SurfaceMarker fdi={focusFdi} surface={focusSurface} onFocus={setSiteFocus} />
+            )}
           </Suspense>
           <Orbit
             zoom={zoom}
             focusFdi={focusFdi}
-            focusSite={focusSite ? siteFocus : null}
+            focusSite={focusSite || focusSurface ? siteFocus : null}
             viewDirection={viewDirection}
           />
           {/* Skipped outright when labels are off — this projects 32 anchors on
@@ -1381,7 +1587,14 @@ export function ToothArch3D({
 
                 {reading && perio && <DepthTag reading={reading} perio={perio} />}
 
-                {lesion && lesion.length > 0 && <CariesTag label={caries.badge} />}
+                {lesion && lesion.length > 0 && (
+                  // The grades ride in the badge once any are recorded, so the
+                  // arch says how far the tooth's lesions have got without the
+                  // panel: "Caries, C2" — or "Caries, C2, C3" where surfaces differ.
+                  <CariesTag
+                    label={[caries.badge, ...(cariesGrades?.get(tooth.fdi) ?? [])].join(', ')}
+                  />
+                )}
 
                 {fixture && <ImplantTag label={implants.badge} />}
 
