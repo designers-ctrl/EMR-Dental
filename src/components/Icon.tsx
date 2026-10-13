@@ -15,11 +15,13 @@
 
 import type { SvgIconComponent } from '@mui/icons-material'
 
+import AddOutlined from '@mui/icons-material/AddOutlined'
 import AddPhotoAlternateOutlined from '@mui/icons-material/AddPhotoAlternateOutlined'
 import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined'
 import ArticleOutlined from '@mui/icons-material/ArticleOutlined'
 import AssignmentIndOutlined from '@mui/icons-material/AssignmentIndOutlined'
 import BarChartOutlined from '@mui/icons-material/BarChartOutlined'
+import BuildOutlined from '@mui/icons-material/BuildOutlined'
 import CachedOutlined from '@mui/icons-material/CachedOutlined'
 import CalendarMonthOutlined from '@mui/icons-material/CalendarMonthOutlined'
 import CallOutlined from '@mui/icons-material/CallOutlined'
@@ -30,9 +32,11 @@ import ContactMailOutlined from '@mui/icons-material/ContactMailOutlined'
 import ContactPageOutlined from '@mui/icons-material/ContactPageOutlined'
 import ContentPasteOutlined from '@mui/icons-material/ContentPasteOutlined'
 import CreditCardOutlined from '@mui/icons-material/CreditCardOutlined'
+import DeleteOutlined from '@mui/icons-material/DeleteOutlined'
 import DescriptionOutlined from '@mui/icons-material/DescriptionOutlined'
 import DynamicFormOutlined from '@mui/icons-material/DynamicFormOutlined'
 import EditNoteOutlined from '@mui/icons-material/EditNoteOutlined'
+import EditOutlined from '@mui/icons-material/EditOutlined'
 import ExpandMoreOutlined from '@mui/icons-material/ExpandMoreOutlined'
 import FemaleOutlined from '@mui/icons-material/FemaleOutlined'
 import ForwardToInboxOutlined from '@mui/icons-material/ForwardToInboxOutlined'
@@ -54,6 +58,7 @@ import PostAddOutlined from '@mui/icons-material/PostAddOutlined'
 import ReceiptLongOutlined from '@mui/icons-material/ReceiptLongOutlined'
 import RestartAltOutlined from '@mui/icons-material/RestartAltOutlined'
 import ScienceOutlined from '@mui/icons-material/ScienceOutlined'
+import SearchOutlined from '@mui/icons-material/SearchOutlined'
 import SentimentSatisfiedAltOutlined from '@mui/icons-material/SentimentSatisfiedAltOutlined'
 import SettingsOutlined from '@mui/icons-material/SettingsOutlined'
 import ShareOutlined from '@mui/icons-material/ShareOutlined'
@@ -82,7 +87,9 @@ const ICONS: Record<IconName, SvgIconComponent> = {
   library: MenuBookOutlined,
   notes: StickyNote2Outlined,
   support: SupportAgentOutlined,
-  collapse: KeyboardTabOutlined,
+  // The arrow-to-a-bar glyph that used to mean "collapse menu", reused: it
+  // reads as leaving, and no dedicated log-out glyph is in the set yet.
+  logOut: KeyboardTabOutlined,
   recall: CachedOutlined,
   newForm: PostAddOutlined,
   message: ForwardToInboxOutlined,
@@ -111,12 +118,22 @@ const ICONS: Record<IconName, SvgIconComponent> = {
   help: HelpOutlined,
   close: CloseOutlined,
   check: CheckOutlined,
+  add: AddOutlined,
+  restoration: BuildOutlined,
+  // The same glyph as `treatmentPlans` and `sPad` — no new icon, a new meaning.
+  edit: EditNoteOutlined,
+  pencil: EditOutlined,
   reset: RestartAltOutlined,
   back: ArrowBackOutlined,
   more: MoreHorizOutlined,
   layers: LayersOutlined,
   view3d: ViewInArOutlined,
   dropdown: ExpandMoreOutlined,
+  search: SearchOutlined,
+  remove: DeleteOutlined,
+  // The same glyph as `recall` — the two arrows read as "again", which is what
+  // putting a file up a second time is.
+  reupload: CachedOutlined,
 }
 
 /**

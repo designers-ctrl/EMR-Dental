@@ -114,12 +114,20 @@ import the weight files independently. All three must move together or the brows
 back to Helvetica. **300 is not optional**: MUI's stock `h1`/`h2` ask for it, and without the file
 the browser synthesizes a thinner-looking fake. See **mui-ds → Type** for the full rule.
 
-`src/App.tsx` holds **which of the two screens is up** — `PatientChart` (the default) or `Patients`
-— as one `useState`, with no chrome above them; each screen brings its own rail and header. There is
-still no router: screens change through callbacks (`onOpenPatients` from the chart's breadcrumb and
-rail, `onOpenChart` from a row in the list), so the URL never changes and Back/reload land on the
-chart. A third screen, or a need for links, is the point to add a real router rather than grow
-that state.
+`src/App.tsx` decides **which screen is up** — `Login` (the default), `Schedule`, `Patients` or
+the patient record (`PatientChart`) — from the URL **hash**. The patient record is ONE screen with
+several sections that share its sidebar: `#/chart` and `#/imaging` mount `PatientChart`, told
+which section stands to the right (`ChartPanel`, `ImagingPanel`). `#/details` mounts it too, but is
+not a section: it opens `PatientDetailsDialog` OVER whichever section was up, which stays mounted
+underneath so nothing charted is lost. The hash is read through
+`useSyncExternalStore`; there is no chrome above them, and each screen brings its own layout. There
+is still no router *library*: screens change through callbacks (`onSignIn`, `onOpenChart`,
+`onOpenPatients`) that set the hash, so a reload stays on the screen being worked on and the
+browser's Back button steps between screens. To open a screen directly, put its hash in the URL.
+
+⚠️ **The hash is navigation, not access control, and the login checks nothing.** There is no auth:
+`#/chart` opens without signing in, and Sign in goes through with empty fields — deliberately. When
+screens need parameters (which patient?) or nesting, adopt a router library rather than grow this.
 
 ⚠️ **`defaultMode` is not `defaultColorScheme`.** The theme's `defaultColorScheme: 'light'` picks
 which scheme owns the `:root` CSS block; `defaultMode` is a **ThemeProvider prop** that decides what
@@ -142,10 +150,14 @@ per-component prop names.
 
 There is **no shared shell wrapper**. Each screen is self-contained and declares its own chrome —
 it mounts `<Rail>` itself. What two screens both need lives in **`src/components/`**: `Icon.tsx`
-(the canonical `ICONS` record and `<Icon>`) and `Rail.tsx` (the app rail). Everything else is still
+(the canonical `ICONS` record and `<Icon>`) and `Rail.tsx` (the app rail: the sections, and at the
+bottom the signed-in user's avatar with its Settings / Support / Log out menu). A rail or menu item
+whose `available` flag is false in the dataset has no screen yet and renders disabled — flip the
+flag in `patientChart.rail` when its screen lands. Everything else is still
 a **local function inside the screen that uses it** — `PatientChart.tsx` defines `PatientSidebar`,
-`ChartPanel` and others, `Patients.tsx` defines `PatientList` and `DaySchedulePanel`, none exported
-(the screen is each file's only export).
+`ChartPanel` and others, `Patients.tsx` defines `PatientList` and `DaySchedulePanel`, `Login.tsx`
+defines `SignInForm` and its own small 3D scene (`HealthyArch`, all 32 teeth sound, drawn from
+`toothModels` — not from the patient chart), none exported (the screen is each file's only export).
 
 ⚠️ **`Storybook.tsx` still declares its own `ICONS`**, with a different key set, pulled from the
 `@mui/icons-material` barrel. `src/components/Icon.tsx` is the canonical one and deep-imports each
@@ -160,9 +172,9 @@ Several files sit in `src/screens/` but are really reusable visuals or helpers, 
 
 | Building… | Goes in | Notes |
 |---|---|---|
-| A **full screen / page** | `src/screens/` | One `.tsx` per screen; it declares its own chrome. Add it to the `Screen` state in `App.tsx`. |
+| A **full screen / page** | `src/screens/` | One `.tsx` per screen; it declares its own chrome. Add its id to `SCREENS` in `App.tsx`. |
 | A **screen's dataset** | `src/data/<screen>.ts` | A typed contract + a synthetic data object. See the house rule below. |
-| A **reusable component** | `src/components/` | Holds `Icon.tsx` and `Rail.tsx`. Move a piece here when a second screen needs it, not before. |
+| A **reusable component** | `src/components/` | Holds `Icon.tsx`, `Rail.tsx` and `HeaderFilter.tsx` (the "All ▾" filter in a data-grid header, with `filterOptions.ts`). Move a piece here when a second screen needs it, not before. |
 | A **chart** | inline in the screen | From `@mui/x-charts`; colours come from the theme. Add it to the Storybook's Data viz section. |
 | **Storybook content** | `src/data/storybook.ts` | The Storybook view is a pure projection of this. |
 
@@ -187,9 +199,14 @@ Several files sit in `src/screens/` but are really reusable visuals or helpers, 
   map, the scale tables, the chart data.
 - `src/data/patientChart.ts` — the main product dataset (rail, patient fields, all 32 teeth). Also
   owns the `IconName` type that `src/components/Icon.tsx` maps to glyphs.
-- `src/data/patients.ts` — the Patients list dataset (rows, filters, the day schedule). A row opens
-  the chart only when its `id` matches `patientChart.patient.id` (`hasChart`) — one synthetic record
-  exists, and no other row may open it under another name.
+- `src/data/patients.ts` — the Patients list dataset (rows, filters, the day schedule). ⚠️ EVERY
+  row opens the one synthetic patient page that exists (`patientChart`), whichever patient the row
+  names — asked for so the list can be walked as a flow. A real backend takes the row's `id`.
+- `src/data/patientDetails.ts` — the Patient details of the record (Personal, Family,
+  Insurance, M&D history, Rx history), opened from the "See full patient details" link in the
+  sidebar as a dialog over the record — `PatientDetailsDialog` (`src/screens/PatientDetails.tsx`). What the
+  record already states (name, ID, date of birth, status, provider, phone) is READ from
+  `patientChart`/`patients`, not retyped. Its Rx history reuses the tooth panel's medication rows.
 - `src/data/toothModels.ts` — per-tooth measurements and the node names inside `teeth.glb`.
 - **The odontogram is a single 3D arch.** `src/assets/teeth/teeth.glb` (32 separated meshes) is
   loaded by `src/screens/toothScene.ts` and rendered by `ToothArch.tsx` via @react-three/fiber —

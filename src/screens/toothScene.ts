@@ -11,7 +11,7 @@ import {
   Vector3,
 } from 'three'
 
-import type { ToothStatus } from '../data/patientChart.ts'
+import type { RestorationPaintId, ToothStatus } from '../data/patientChart.ts'
 import teethUrl from '../assets/teeth/teeth.glb?url'
 
 /**
@@ -60,13 +60,6 @@ export const CARIES_PAINT = {
   halo: '#9A6533',
   /** The core of it, down in the fissure. */
   core: '#2A1708',
-  /**
-   * The band round the side of the crown, heaviest towards the neck of the
-   * tooth and fading out as it runs down the axial wall. Lighter and warmer
-   * than the lesion's own margin — this is staining spread over a surface,
-   * not the lesion itself, so it must not read as more decay.
-   */
-  cervical: '#B5833F',
 }
 
 /**
@@ -174,20 +167,70 @@ const DIMMED_TINT = new Color(DIMMED_ENAMEL.tint)
 const DIMMED_MIX = 0.92
 
 /**
+ * What a restoration is painted with on the tooth, by what it is made of.
+ *
+ * Like every other paint in this file these are the scene's own colours, not
+ * theme tokens — WebGL needs a resolved colour, and they stand for materials
+ * in the mouth, not for parts of the interface. Composite, sealant, gold and
+ * ceramic were each sampled from the reference they were asked for in.
+ *
+ * `opacity` is just short of solid on purpose: the enamel's shading still
+ * shows through, so the patch reads as lying ON the tooth rather than as a
+ * flat sticker over it. Ceramic is the most see-through of them, by request.
+ *
+ * Most are more than a colour:
+ *   · `shade` — the soft light-to-shadow fall-off the enamel itself has, so
+ *     the fill sits on the tooth instead of lying flat over it. Composite,
+ *     ceramic, non-precious metal and temporary take it, and are a step more
+ *     see-through than the rest so the tooth's own form reads through;
+ *   · `gloss` — deep shading with highlights and a rim: amalgam and gold, the
+ *     two that have to read as polished metal catching the light;
+ *   · `hatch` — fine diagonal lines: temporary, which is otherwise the same
+ *     grey as non-precious metal and the plain wash. The three greys are told
+ *     apart by pattern and by finish, never by shade alone.
+ *
+ * `edge` is how far the outline round a patch is darkened from its fill.
+ * `plain` is a region that is picked but has nothing to be painted as yet — a
+ * filling before its material is chosen: a light grey wash, so the area is
+ * marked without claiming a material.
+ */
+export const RESTORATION_PAINT: {
+  paints: Record<
+    RestorationPaintId,
+    { colour: string; opacity: number; gloss?: number; shade?: number; hatch?: number }
+  >
+  edge: number
+  plain: { colour: string; opacity: number }
+} = {
+  paints: {
+    composite: { colour: '#B2C0EC', opacity: 0.72, shade: 1 },
+    sealant: { colour: '#3CC2C4', opacity: 0.85 },
+    gold: { colour: '#F7E079', opacity: 0.94, gloss: 1 },
+    ceramic: { colour: '#A480DC', opacity: 0.6, shade: 1 },
+    amalgam: { colour: '#C3C8D0', opacity: 0.96, gloss: 1 },
+    nonPreciousMetal: { colour: '#9BA3AF', opacity: 0.7, shade: 1 },
+    temporary: { colour: '#C4C8CE', opacity: 0.66, shade: 1, hatch: 1 },
+  },
+  edge: 0.78,
+  plain: { colour: '#C4C8CE', opacity: 0.45 },
+}
+
+/**
  * How much of an unpicked tooth survives the veil.
  *
- * Held high deliberately. The unpicked teeth are context, not clutter — a
- * clinician reads a tooth against its neighbours, and a chart that fades them
- * to near-nothing has thrown away what the picked tooth is being compared to.
+ * Was 0.74, held high so the neighbours stayed solid context. It came down
+ * when picking a tooth started taking the OTHER jaw off the screen and
+ * stepping the camera right in: with one arch in frame and the picked tooth
+ * filling it, the neighbours are no longer what the tooth is read against —
+ * they are what it has to stand out from.
  *
- * It is also what keeps the OLD warning at bay. Depth writing stops the arch
- * sorting into mush, but a low opacity still lets four or five crowded molars
- * read through one another at the back of the arch, which is the same
- * complaint in milder form. 0.74 pushes the unpicked teeth back a clear plane
- * while each still reads as one solid tooth; much below that and the posterior
- * segments start to blur together.
+ * The old warning still sets the floor. Depth writing stops the arch sorting
+ * into mush, but a very low opacity lets crowded molars read through one
+ * another at the back of the arch. Hiding the opposing jaw removed half of
+ * that crowding, which is what makes 0.36 hold; much below it and the
+ * posterior segment starts to blur together again.
  */
-const DIMMED_OPACITY = 0.74
+const DIMMED_OPACITY = 0.36
 
 /**
  * At most eight materials exist for the whole screen — one per state, dimmed

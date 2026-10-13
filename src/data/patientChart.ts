@@ -32,7 +32,7 @@ export type IconName =
   | 'library'
   | 'notes'
   | 'support'
-  | 'collapse'
+  | 'logOut'
   // header actions
   | 'recall'
   | 'newForm'
@@ -75,7 +75,192 @@ export type IconName =
   // perio tooth panel
   | 'close'
   | 'check'
+  | 'edit'
+  | 'pencil'
   | 'reset'
+  | 'add'
+  | 'restoration'
+  // imaging section
+  | 'search'
+  | 'remove'
+  | 'reupload'
+
+// ─── TOOTH PANEL ──────────────────────────────────────────────────────────
+
+/** The sections of a tooth's record, as the tabs in its panel. */
+export type ToothPanelTabId = 'general' | 'medication' | 'history'
+
+/**
+ * What every tooth panel has in common, whichever chart opened it: the tooth
+ * list, the tooth's name, the tabs under it and the actions on its bottom edge.
+ *
+ * `general` opens on an OVERVIEW — one card per thing charted on the tooth in
+ * the chart type in view — and a card opens that record's own form or detail.
+ * `medication` is a table of what was prescribed for the tooth, and `history`
+ * a list of the actions marked on it; a tooth with neither says so with
+ * `empty`.
+ */
+/** One kind of pathology in the "Add pathology" menu. */
+export interface PathologyOption {
+  id: string
+  label: string
+  available: boolean
+}
+
+export interface ToothPanelFrame {
+  /** Names the tab strip for assistive tech. */
+  tabsLabel: string
+  tabs: { id: ToothPanelTabId; label: string }[]
+  /** Said in a tab with nothing recorded for the tooth. */
+  empty: Record<Exclude<ToothPanelTabId, 'general'>, string>
+  /** Before the tooth's number in the heading, and the close button's name. */
+  titlePrefix: string
+  close: string
+  /** Names the tooth list down the panel's left side. */
+  toothRail: string
+  /**
+   * Read out, after its number, for a tooth the list marks with a dot — the
+   * teeth that already carry something on the chart type in view. The dot's
+   * colour differs per chart; these words are what say what it means.
+   */
+  railFlags: { dental: string; perio: string; endo: string; implant: string }
+  /**
+   * Said, as an inline notice, on the overview of a tooth with nothing charted
+   * on the chart type in view. The chart cannot tell a sound tooth from one
+   * nobody has examined yet, so the words name BOTH — never "healthy" alone.
+   */
+  emptyOverview: { title: string; body: string }
+  /** Leads from an open record back to the tooth's overview. */
+  back: string
+  /**
+   * The free-text line under the overview's three buttons: what the clinician
+   * types is added to the tooth as a note. `placeholder` is the faint prompt in
+   * the empty field, `label` its accessible name, `noteLabel` the word under
+   * each note it adds.
+   */
+  quickAdd: { placeholder: string; label: string; noteLabel: string }
+  /** Said on hover/focus over an "Add…" button with no form behind it yet. */
+  unavailableHint: string
+  /**
+   * What "Add pathology" offers, as a menu. `available` is whether a form
+   * exists for that kind yet — only caries does; the rest are listed, because
+   * the menu is the real set of pathologies a tooth can be given, and switched
+   * off until there is something to open.
+   */
+  pathologies: { label: string; options: PathologyOption[] }
+  /** The Medication tab: what was prescribed for each tooth, as a table. */
+  medication: ToothMedicationTable
+  /** The History tab: the copy round the actions marked on a tooth. */
+  history: ToothHistoryCopy
+  /** The glyph leading each of the three "Add…" buttons, and the free-text line. */
+  icons: { addImplant: IconName; addPathology: IconName; addRestoration: IconName; quickAdd: IconName }
+  actions: {
+    /** On the overview: the three kinds of record a tooth can be given. */
+    addImplant: string
+    addPathology: string
+    addRestoration: string
+    /** On an open record: mark the tooth for treatment. */
+    addTreatment: string
+    /**
+     * On an open record: done, back to the overview. Entries are kept as they
+     * are made, so this does not gate anything — it closes the record.
+     */
+    save: string
+    /** On an open record: the icon-only button that takes its entries back. */
+    reset: string
+  }
+  /**
+   * The confirmation Reset asks with — entries are kept as they are made, so
+   * there is no unsaved copy to fall back on. `{record}` and `{tooth}` are
+   * replaced with the record's and the tooth's names. It also says what Reset
+   * does to the model: every surface marked on the tooth is taken off it.
+   */
+  resetConfirm: { title: string; body: string; cancel: string; confirm: string }
+}
+
+/** One prescription, written against the tooth it was given for. */
+export interface ToothMedication {
+  id: string
+  fdi: number
+  /** The drug and its strength, as one label. */
+  name: string
+  /** ISO `YYYY-MM-DD`, so it sorts as a date. Shown through `dateFormat`. */
+  prescribed: string
+  reason: string
+  provider: string
+  pharmacy: string
+  /** The prescriber's NPI and DEA numbers, as text — they are identifiers, not quantities. */
+  npi: string
+  dea: string
+}
+
+export type MedicationColumnId =
+  | 'name'
+  | 'prescribed'
+  | 'reason'
+  | 'provider'
+  | 'pharmacy'
+  | 'npi'
+  | 'dea'
+
+export interface ToothMedicationTable {
+  /** Names the table for assistive tech. */
+  label: string
+  columns: Record<MedicationColumnId, string>
+  /** dayjs format — the same `MM.DD.YY` the record writes dates in. */
+  dateFormat: string
+  filters: {
+    /** The option that clears a filter. */
+    all: string
+    /** Goes before a column's name to name its filter — "Filter by reason". */
+    by: string
+  }
+  /** Shown in the table when the filters leave no rows. */
+  noMatches: string
+  rows: ToothMedication[]
+}
+
+/**
+ * One dated entry in a tooth's history: something that was charted, changed or
+ * done, and by whom.
+ */
+export interface ToothUpdate {
+  id: string
+  fdi: number
+  /** ISO `YYYY-MM-DD`, so the list sorts by date. Shown through `dateFormat`. */
+  date: string
+  /** What happened, in a few words: "Caries charted". */
+  title: string
+  /** The one line of detail under it. */
+  detail: string
+  /** Who recorded it. */
+  by: string
+}
+
+/**
+ * The History tab: its words, and the dated updates on record.
+ *
+ * Two kinds of entry share the tab. ACTIONS are not data — an action is a
+ * tooth being marked for treatment in the panel, described from the assessment
+ * it was marked on, so that list is built from the chart's own state. UPDATES
+ * are the record of what has happened to the tooth before today, and come from
+ * here.
+ */
+export interface ToothHistoryCopy {
+  /** Names the list of actions for assistive tech. */
+  label: string
+  /** The button that ticks an action off, and the word for one already ticked. */
+  done: string
+  /** Stands in for the surfaces when the tooth was marked with none assessed. */
+  noSurfaces: string
+  /** Stands in for the surfaces of a restoration that covers the whole crown. */
+  wholeCrown: string
+  /** Heading over the dated updates, and the list's accessible name. */
+  updatesTitle: string
+  /** dayjs format — the same `MM.DD.YY` the record writes dates in. */
+  dateFormat: string
+  updates: ToothUpdate[]
+}
 
 // ─── APP RAIL ─────────────────────────────────────────────────────────────
 
@@ -85,18 +270,52 @@ export interface RailItem {
   icon: IconName
 }
 
+/**
+ * A destination in the rail or in the account menu.
+ *
+ * `available` says whether a screen exists behind it yet. Only Schedule and
+ * Patients do, so every other one renders disabled rather than as a button
+ * that silently does nothing. Flip the flag when the screen lands — the rail
+ * reads it, so nothing in the markup needs to change. (The same idea as
+ * `PatientTab.available`, for the same reason.)
+ */
+export interface RailSection extends RailItem {
+  available: boolean
+}
+
 /** Rail items are grouped; the view draws a hairline between groups. */
 export interface RailGroup {
   id: string
-  items: RailItem[]
+  items: RailSection[]
+}
+
+/**
+ * Who is signed in, and the menu their avatar opens — pinned to the bottom of
+ * the rail, below the groups.
+ */
+export interface RailAccount {
+  /** Shown on hover, and read out as part of the avatar button's name. */
+  name: string
+  /** What the avatar shows. */
+  initials: string
+  /** Names the avatar button and its menu for assistive tech. */
+  menuLabel: string
+  /** The menu's own destinations, in order. */
+  items: RailSection[]
+  /**
+   * Always the last item, under a divider — the way out of the product.
+   * Reported through the rail's `onSelect` like any other item.
+   */
+  logOut: RailItem
 }
 
 export interface AppRail {
   groups: RailGroup[]
   /** `id` of the item drawn in the active state. */
   activeItemId: string
-  /** Pinned to the bottom of the rail, below the groups. */
-  footer: RailItem
+  /** Said on hover/focus over a rail item whose `available` is false. */
+  unavailableHint: string
+  account: RailAccount
 }
 
 // ─── PATIENT HEADER ───────────────────────────────────────────────────────
@@ -109,6 +328,40 @@ export interface PatientField {
   label: string
   value: string
   tone: FieldTone
+  /** Leading glyph on an `accent` value, so the call to action reads as one. */
+  icon?: IconName
+}
+
+/**
+ * The patient's recorded allergies, shown with the header fields because they
+ * have to be seen before anything is prescribed or placed — not found on a tab.
+ *
+ * An allergy is flagged three ways at once — the glyph, the word and the
+ * colour — so it never depends on colour alone.
+ */
+export interface PatientAllergies {
+  label: string
+  /** Drawn on every allergy, beside its name. */
+  icon: IconName
+  /** One entry per recorded allergen. Seeds the view's state; the editor changes it. */
+  items: string[]
+  /** Every allergen the editor offers, in the order it lists them. */
+  options: string[]
+  /** The control beside the label that opens the editor, and the editor's own copy. */
+  edit: {
+    /** The glyph on the button that opens the editor — it carries no word. */
+    icon: IconName
+    /** The editor's heading — also the button's name, on hover and read aloud. */
+    title: string
+    cancel: string
+    save: string
+  }
+  /**
+   * Shown when `items` is empty. It states that none are KNOWN — a clinical
+   * fact somebody recorded — which is not the same as the question never
+   * having been asked.
+   */
+  none: string
 }
 
 export interface HeaderAction {
@@ -124,9 +377,14 @@ export interface PatientTab {
   label: string
   icon: IconName
   /**
+   * Kept in the record's configuration but left out of the sidebar for now.
+   * For a section that is coming back — as opposed to one that was removed,
+   * which is simply deleted from the list.
+   */
+  hidden?: boolean
+  /**
    * Whether the practice ranks it first. The sidebar lists `primary` tabs
-   * ahead of the rest; how many show before the "More" toggle is decided by
-   * the space available, not by this flag.
+   * ahead of the rest.
    *
    * A record has seventeen sections and a sidebar has room for a handful, so
    * the split is DATA rather than a slice taken in the view — which section a
@@ -167,8 +425,15 @@ export interface Patient {
   status: string
   /** MM.DD.YY, as the record writes it. */
   dateOfBirth: string
-  /** Rendered as three two-row columns, in this order. */
+  /** Rendered two to a row, in this order. */
   fields: PatientField[]
+  /** Shown under the fields, across the full width. */
+  allergies: PatientAllergies
+  /**
+   * The button under the allergies that leaves the chart for the patient's
+   * full details — everything on file, of which this sidebar is the digest.
+   */
+  fullDetails: string
   actions: HeaderAction[]
   tabs: PatientTab[]
   activeTabId: string
@@ -177,10 +442,6 @@ export interface Patient {
    * rather than in the view so the sentence changes without touching markup.
    */
   unavailableTabHint: string
-  /** The floating toggle that expands the list in place with the sections it had no room for. */
-  moreLabel: string
-  /** Collapses them again. */
-  lessLabel: string
   /**
    * The trail above the navigation — a way back to the list this record was
    * opened from. Only the parent is named: the leaf is the patient's own name,
@@ -651,6 +912,157 @@ export const CARIES_SURFACE_ORDER: CariesSurface[] = [
   'lingual',
 ]
 
+// ─── RESTORATIONS ─────────────────────────────────────────────────────────
+
+/**
+ * Work already in the mouth — a filling, an inlay — as opposed to a finding
+ * that something is wrong. One tooth can carry several.
+ *
+ * ⚠️ SYNTHETIC placeholder. What was placed, on which surfaces and when is a
+ * clinical record a clinician signs; nothing below was ever placed in a mouth.
+ */
+export interface ToothRestoration {
+  id: string
+  fdi: number
+  /** What it is, as the card names it: "Composite filling". */
+  name: string
+  /** Every surface it covers. */
+  surfaces: CariesSurface[]
+  /**
+   * ISO `YYYY-MM-DD`, shown through `dateFormat`. Absent on a restoration
+   * charted through the panel's form, which records what is seen in the mouth,
+   * not when it was placed.
+   */
+  placedOn?: string
+  provider?: string
+  /** How it is painted on the model, where it is painted at all. */
+  paint?: RestorationPaintId
+  /** `crown` when it is drawn over the whole crown; the listed surfaces otherwise. */
+  coverage?: RestorationCoverage
+  /** What it is made of, how it is holding up, and how its margin sits — as labels. */
+  material?: string
+  quality?: string
+  detail?: string
+  /** Asked of a crown only: its part in a bridge, and what it stands on — as labels. */
+  crownType?: string
+  crownBase?: string
+}
+
+/** One choice in the restoration form: stored by `id`, shown by `label`. */
+export interface RestorationOption {
+  id: string
+  label: string
+}
+
+/**
+ * How a restoration is painted on the model's tooth — a name for a colour the
+ * scene owns (`RESTORATION_PAINT` in `toothScene.ts`), so no hex lives here.
+ */
+export type RestorationPaintId =
+  | 'composite'
+  | 'sealant'
+  | 'gold'
+  | 'ceramic'
+  | 'amalgam'
+  | 'nonPreciousMetal'
+  | 'temporary'
+
+/**
+ * How much of the crown a restoration takes on the model:
+ *   · `surfaces` — the surfaces it lists (a filling, a sealant);
+ *   · `crown`    — the whole crown down to the gum line (a crown);
+ *   · `facial`   — the whole crown EXCEPT its tongue side (a veneer: a shell
+ *                  bonded to the face of the tooth, which leaves the lingual /
+ *                  palatal surface as it was).
+ */
+export type RestorationCoverage = 'surfaces' | 'crown' | 'facial'
+
+/** A pick-one group the restoration form can put under Material. */
+export type RestorationQuestion = 'quality' | 'detail' | 'crownType' | 'crownBase'
+
+/**
+ * One kind of restoration in the "Add restoration" menu, with what its form
+ * has to know about it.
+ */
+export interface RestorationKind extends RestorationOption {
+  /**
+   * What the form does about surfaces:
+   *   · `pick`   — it asks, and any of the five can be ticked (a filling);
+   *   · `locked` — it shows `defaultSurfaces` only, ticked and not for
+   *                changing (a veneer is its facial surface, by definition);
+   *   · `none`   — it does not ask (a crown is the whole crown).
+   */
+  surfaceChoice: 'pick' | 'locked' | 'none'
+  /** The surfaces ticked when the form opens — and, when `locked`, for good. */
+  defaultSurfaces: CariesSurface[]
+  /** How much of the crown it is drawn over on the model. */
+  coverage: RestorationCoverage
+  /** Painted this way on the model whatever it is made of — a sealant. */
+  paint?: RestorationPaintId
+  /** Painted the way its MATERIAL is — a filling, which is drawn as what fills it. */
+  paintFromMaterial?: boolean
+  /**
+   * The materials this kind is offered in, by id and in the form's own order.
+   * Absent, it is offered in all of them.
+   */
+  materialIds?: string[]
+  /** The groups its form shows under Material, in this order. */
+  asks: RestorationQuestion[]
+}
+
+/** A material, and the paint a restoration made of it takes where the kind allows. */
+export interface RestorationMaterial extends RestorationOption {
+  paint?: RestorationPaintId
+}
+
+export interface RestorationChart {
+  /** The legend-style row: which swatch stands for a restoration. */
+  swatch: string
+  /** dayjs format — the same `MM.DD.YY` the record writes dates in. */
+  dateFormat: string
+  labels: {
+    surfaces: string
+    placed: string
+    provider: string
+    material: string
+    quality: string
+    detail: string
+    crownType: string
+    crownBase: string
+  }
+  /**
+   * The form "Add restoration" opens. `types` is the menu the button offers —
+   * the kind picked there heads the form — and the groups under the surfaces
+   * are each pick-one. Which groups a kind is asked is its own `asks`: a
+   * crown is asked what part it plays and what it stands on, not how its
+   * margin sits.
+   *
+   * ⚠️ The option lists are carried over from the previous product's
+   * restoration form. Whether they are the right vocabulary, and what each
+   * quality and margin term means clinically, is a clinician's call.
+   */
+  form: {
+    /** Names the menu of kinds for assistive tech. */
+    typesLabel: string
+    types: RestorationKind[]
+    surfacesTitle: string
+    /** Read out for a surface tile that is part of the restoration, and one that is not. */
+    surfaceOn: string
+    surfaceOff: string
+    materialTitle: string
+    materials: RestorationMaterial[]
+    qualityTitle: string
+    qualities: RestorationOption[]
+    detailTitle: string
+    details: RestorationOption[]
+    crownTypeTitle: string
+    crownTypes: RestorationOption[]
+    crownBaseTitle: string
+    crownBases: RestorationOption[]
+  }
+  records: ToothRestoration[]
+}
+
 export interface CariesChart {
   /** Stated on screen — see the warning above. */
   disclaimer: string
@@ -694,8 +1106,6 @@ export interface CariesChart {
     dismissNotice: string
     /** Names the tooth list down the panel's left side. */
     toothRail: string
-    /** Read out, after its number, for a tooth in that list that carries a finding. */
-    toothRailFlag: string
     /** Read out for a tile that has no grade yet; the tile shows a dash. */
     ungraded: string
     /**
@@ -704,10 +1114,6 @@ export interface CariesChart {
      * edge rather than an occlusal table. The keys stay `lingual`/`occlusal`.
      */
     surfaceLabelOverrides: { upperLingual: string; anteriorOcclusal: string }
-    /** Clears everything recorded for the tooth — asks first. */
-    reset: string
-    /** The confirmation it asks with. `{tooth}` is replaced with the tooth's name. */
-    resetConfirm: { title: string; body: string; cancel: string; confirm: string }
   }
   /**
    * The per-surface assessment for each carious tooth — what the panel opens
@@ -1123,8 +1529,21 @@ export interface Odontogram {
    * a reading for one tab, so it is drawn in every chart type.
    */
   implants: ImplantChart
+  /**
+   * Existing restorations — fillings and the like. Shown as cards on a tooth's
+   * overview and in the detail they open; NOT drawn on the 3D arch yet.
+   */
+  restorations: RestorationChart
   /** Corner affordances, bottom-left and bottom-right of the chart panel. */
   footerActions: { start: RailItem; end: RailItem }
+  /** The frame every tooth panel shares — its sections and its two actions. */
+  toothPanel: ToothPanelFrame
+  /**
+   * The cards down the chart's left edge — one per finding on the chart type
+   * in view. `label` names the list; `toothPrefix` goes before the tooth
+   * number on each card.
+   */
+  findingCards: { label: string; toothPrefix: string }
   /** The legend's own heading, and its collapse toggle's two names. */
   legend: { title: string; hideLabel: string; showLabel: string }
 }
@@ -1139,42 +1558,65 @@ export interface PatientChartScreen {
 }
 
 export const patientChart: PatientChartScreen = {
-  title: 'Charts',
+  title: '3D dental system',
 
   rail: {
     activeItemId: 'patients',
+    unavailableHint: 'Not built yet',
+    // Schedule and Patients are the only sections with a screen behind them,
+    // so they are the only `available: true` items. The rest stay listed —
+    // the rail is the real information architecture — but cannot be picked
+    // until something exists behind them.
     groups: [
       {
         id: 'practice',
         items: [
-          { id: 'schedule', label: 'Schedule', icon: 'schedule' },
-          { id: 'operations', label: 'Operations', icon: 'operations' },
-          { id: 'tasks', label: 'Tasks', icon: 'tasks' },
-          { id: 'billing', label: 'Billing', icon: 'billing' },
-          { id: 'settings', label: 'Settings', icon: 'settings' },
+          // Patients leads the rail: it is where a session starts, and it puts
+          // the two sections that have a screen next to each other at the top.
+          { id: 'patients', label: 'Patients', icon: 'patients', available: true },
+          { id: 'schedule', label: 'Schedule', icon: 'schedule', available: true },
+          { id: 'operations', label: 'Operations', icon: 'operations', available: false },
+          { id: 'tasks', label: 'Tasks', icon: 'tasks', available: false },
+          { id: 'billing', label: 'Billing', icon: 'billing', available: false },
         ],
       },
       {
         id: 'records',
         items: [
-          { id: 'patients', label: 'Patients', icon: 'patients' },
-          { id: 'referrals', label: 'Referrals', icon: 'referrals' },
-          { id: 'contacts', label: 'Contacts', icon: 'contacts' },
-          { id: 'treatment-plans', label: 'Treatment plans', icon: 'treatmentPlans' },
+          { id: 'referrals', label: 'Referrals', icon: 'referrals', available: false },
+          { id: 'contacts', label: 'Contacts', icon: 'contacts', available: false },
+          {
+            id: 'treatment-plans',
+            label: 'Treatment plans',
+            icon: 'treatmentPlans',
+            available: false,
+          },
         ],
       },
       {
         id: 'clinic',
         items: [
-          { id: 'inventory', label: 'Inventory', icon: 'inventory' },
-          { id: 'pharmacy', label: 'Pharmacy', icon: 'pharmacy' },
-          { id: 'library', label: 'Library', icon: 'library' },
-          { id: 'notes', label: 'Notes', icon: 'notes' },
-          { id: 'support', label: 'Support', icon: 'support' },
+          { id: 'inventory', label: 'Inventory', icon: 'inventory', available: false },
+          { id: 'pharmacy', label: 'Pharmacy', icon: 'pharmacy', available: false },
+          { id: 'library', label: 'Library', icon: 'library', available: false },
+          { id: 'notes', label: 'Notes', icon: 'notes', available: false },
         ],
       },
     ],
-    footer: { id: 'collapse', label: 'Collapse menu', icon: 'collapse' },
+    // Settings and Support moved here from the groups above: they belong to
+    // the person signed in, not to the practice's sections.
+    account: {
+      // Synthetic. The same placeholder name the record lists as its primary
+      // provider — nobody is actually signed in; there is no auth.
+      name: 'Dr. Louie Al-Faraje',
+      initials: 'LA',
+      menuLabel: 'Account',
+      items: [
+        { id: 'settings', label: 'Settings', icon: 'settings', available: false },
+        { id: 'support', label: 'Support', icon: 'support', available: false },
+      ],
+      logOut: { id: 'log-out', label: 'Log out', icon: 'logOut' },
+    },
   },
 
   patient: {
@@ -1198,21 +1640,48 @@ export const patientChart: PatientChartScreen = {
         tone: 'default',
       },
       { id: 'phone', label: 'Phone number', value: '(888) 452 1505', tone: 'default' },
-      {
-        id: 'primary-insurance',
-        label: 'Primary insurance',
-        value: 'Active until 06.22',
-        tone: 'default',
-      },
-      {
-        id: 'secondary-insurance',
-        label: 'Secondary insurance',
-        value: 'Expired on 07.21',
-        tone: 'default',
-      },
       { id: 'last-visit', label: 'Last visit', value: '12.11.22', tone: 'default' },
-      { id: 'next-date', label: 'Next date', value: 'Set date', tone: 'accent' },
+      {
+        id: 'next-date',
+        label: 'Next date',
+        value: 'Set date',
+        tone: 'accent',
+        icon: 'schedule',
+      },
     ],
+    // ⚠️ SYNTHETIC. These two allergens are placeholders chosen because they
+    // are the ones a dental chart most often carries; nobody took this
+    // history. A real allergy list is a clinical record a clinician confirms.
+    allergies: {
+      label: 'Allergies',
+      icon: 'alerts',
+      items: ['Penicillin', 'Latex'],
+      none: 'No known allergies',
+      // ⚠️ SYNTHETIC pick-list. A plausible spread of what a dental practice
+      // asks about, written by nobody clinical: which allergens a practice
+      // lists, and what it calls them, is for a clinician to decide.
+      options: [
+        'Penicillin',
+        'Amoxicillin',
+        'Latex',
+        'Local anaesthetics',
+        'Aspirin',
+        'Ibuprofen',
+        'Codeine',
+        'Sulfa drugs',
+        'Chlorhexidine',
+        'Iodine',
+        'Nickel',
+        'Acrylic resin',
+      ],
+      edit: {
+        icon: 'pencil',
+        title: 'Edit allergies',
+        cancel: 'Cancel',
+        save: 'Save',
+      },
+    },
+    fullDetails: 'See full patient details',
     actions: [
       { id: 'recall', label: 'Recall', icon: 'recall', primary: false },
       { id: 'new-form', label: 'New form', icon: 'newForm', primary: false },
@@ -1225,8 +1694,6 @@ export const patientChart: PatientChartScreen = {
     // be activated until something exists behind them.
     activeTabId: 'charts',
     unavailableTabHint: 'Not built yet',
-    moreLabel: 'More',
-    lessLabel: 'Show less',
     breadcrumb: { parent: 'Patients' },
     /*
      * Four sections sit in the sidebar and the other thirteen fold under
@@ -1236,8 +1703,10 @@ export const patientChart: PatientChartScreen = {
      * rather than links that silently do nothing.
      */
     tabs: [
-      { id: 'general', label: 'General', icon: 'general', available: false, primary: true },
-      { id: 'charts', label: 'Charts', icon: 'charts', available: true, primary: true },
+      // The tooth chart — the 3D arch with its dental, perio and endo readings.
+      // Named for what it shows rather than "Charts", which collided with the
+      // three chart tabs inside it.
+      { id: 'charts', label: '3D dental system', icon: 'charts', available: true, primary: true },
       {
         id: 'clinical-notes',
         label: 'Clinical notes',
@@ -1245,9 +1714,8 @@ export const patientChart: PatientChartScreen = {
         available: false,
         primary: true,
       },
-      { id: 'imaging', label: 'Imaging', icon: 'imaging', available: false, primary: true },
-      { id: 'photos', label: 'Photos', icon: 'photos', available: false, primary: false },
-      { id: 'eclaims', label: 'eClaims', icon: 'eclaims', available: false, primary: false },
+      // Built: opens the scans on file, beside the patient sidebar.
+      { id: 'imaging', label: 'Imaging', icon: 'imaging', available: true, primary: true },
       { id: 'ledger', label: 'Ledger', icon: 'ledger', available: false, primary: false },
       {
         id: 'implant-exam',
@@ -1255,11 +1723,12 @@ export const patientChart: PatientChartScreen = {
         icon: 'implantExam',
         available: false,
         primary: false,
+        // Not shown for now — see `hidden`.
+        hidden: true,
       },
       { id: 'smile', label: 'Smile', icon: 'smile', available: false, primary: false },
       { id: 'checklists', label: 'Checklists', icon: 'checklists', available: false, primary: false },
       { id: 'lab', label: 'Lab', icon: 'lab', available: false, primary: false },
-      { id: 'erx', label: 'eRx', icon: 'erx', available: false, primary: false },
       { id: 'docs', label: 'Docs', icon: 'docs', available: false, primary: false },
       { id: 'forms', label: 'Forms', icon: 'forms', available: false, primary: false },
       { id: 'alerts', label: 'Alerts', icon: 'alerts', available: false, primary: false },
@@ -1270,7 +1739,6 @@ export const patientChart: PatientChartScreen = {
         available: false,
         primary: false,
       },
-      { id: 's-pad', label: 'S Pad', icon: 'sPad', available: false, primary: false },
     ],
   },
 
@@ -1385,8 +1853,8 @@ export const patientChart: PatientChartScreen = {
     activeChartId: 'dental',
     charts: [
       { id: 'dental', label: 'Dental', enabled: true },
-      { id: 'perio', label: 'Perio Chart', enabled: true },
-      { id: 'endo', label: 'Endo Chart', enabled: true },
+      { id: 'perio', label: 'Perio', enabled: true },
+      { id: 'endo', label: 'Endo', enabled: true },
     ],
     archViews: ['upper', 'both', 'lower'],
     activeArchView: 'both',
@@ -1637,16 +2105,8 @@ export const patientChart: PatientChartScreen = {
         ],
         dismissNotice: 'Dismiss',
         toothRail: 'Select a tooth',
-        toothRailFlag: 'caries charted',
         ungraded: 'Not graded',
         surfaceLabelOverrides: { upperLingual: 'Palatal', anteriorOcclusal: 'Incisal' },
-        reset: 'Reset',
-        resetConfirm: {
-          title: 'Reset caries details?',
-          body: 'Everything recorded for {tooth} — every surface and the decision — will be cleared.',
-          cancel: 'Cancel',
-          confirm: 'Reset',
-        },
       },
       /*
        * Seeded to agree with the two findings above: both occlusal, both "into
@@ -1785,6 +2245,166 @@ export const patientChart: PatientChartScreen = {
       ],
     },
 
+    /*
+     * ⚠️ SYNTHETIC. Five fillings, placed on teeth that make the overview read
+     * like a real one — the carious upper-right first molar carries an older
+     * filling on another surface, which is the commonest way a tooth ends up
+     * with two cards. None was ever placed; materials, surfaces, dates and
+     * providers are all invented. Kept off the two implant sites, which have
+     * no natural crown to fill.
+     */
+    restorations: {
+      swatch: 'restoration',
+      dateFormat: 'MM.DD.YY',
+      labels: {
+        surfaces: 'Surfaces',
+        placed: 'Placed',
+        provider: 'Provider',
+        material: 'Material',
+        quality: 'Quality',
+        detail: 'Detail',
+        crownType: 'Crown type',
+        crownBase: 'Crown base',
+      },
+      form: {
+        typesLabel: 'Kind of restoration',
+        types: [
+          // A filling is drawn as what fills it, so its paint is its material's.
+          {
+            id: 'filling',
+            label: 'Filling',
+            surfaceChoice: 'pick',
+            defaultSurfaces: [],
+            coverage: 'surfaces',
+            paintFromMaterial: true,
+            asks: ['quality', 'detail'],
+          },
+          {
+            id: 'sealant',
+            label: 'Sealant',
+            surfaceChoice: 'pick',
+            defaultSurfaces: [],
+            coverage: 'surfaces',
+            paint: 'sealant',
+            asks: ['quality', 'detail'],
+          },
+          // A veneer is its facial surface: buccal, ticked and not for
+          // changing. On the model it is drawn over the crown to the gum line
+          // in its material's colour — all but the tongue side, which a
+          // veneer does not cover.
+          {
+            id: 'veneer',
+            label: 'Veneer',
+            surfaceChoice: 'locked',
+            defaultSurfaces: ['buccal'],
+            coverage: 'facial',
+            paintFromMaterial: true,
+            asks: ['quality', 'detail'],
+          },
+          // A crown is the whole crown — there are no surfaces to choose. Its
+          // form is its own: four materials, then its part in a bridge and
+          // what it stands on, in place of the margin questions.
+          {
+            id: 'crown',
+            label: 'Crown',
+            surfaceChoice: 'none',
+            defaultSurfaces: [],
+            coverage: 'crown',
+            paintFromMaterial: true,
+            materialIds: ['composite', 'ceramic', 'gold', 'non-precious-metal'],
+            asks: ['crownType', 'crownBase'],
+          },
+        ],
+        surfacesTitle: 'Surfaces',
+        surfaceOn: 'included',
+        surfaceOff: 'not included',
+        materialTitle: 'Material',
+        materials: [
+          { id: 'composite', label: 'Composite', paint: 'composite' },
+          { id: 'ceramic', label: 'Ceramic', paint: 'ceramic' },
+          { id: 'amalgam', label: 'Amalgam', paint: 'amalgam' },
+          { id: 'gold', label: 'Gold', paint: 'gold' },
+          { id: 'non-precious-metal', label: 'Non-precious metal', paint: 'nonPreciousMetal' },
+          { id: 'temporary', label: 'Temporary', paint: 'temporary' },
+        ],
+        qualityTitle: 'Quality',
+        qualities: [
+          { id: 'sufficient', label: 'Sufficient' },
+          { id: 'uncertain', label: 'Uncertain' },
+          { id: 'insufficient', label: 'Insufficient' },
+        ],
+        detailTitle: 'Detail',
+        // "Overhang", not the reference form's "Overhand" — a margin that
+        // overhangs is the term; the other spelling was a typo.
+        details: [
+          { id: 'overhang', label: 'Overhang' },
+          { id: 'flush', label: 'Flush' },
+          { id: 'shortfall', label: 'Shortfall' },
+        ],
+        // ⚠️ Carried over from the reference form, like the lists above. An
+        // abutment and a pontic are parts of a bridge, and a pontic replaces a
+        // tooth that is not there — whether these belong under "Crown", and
+        // what choosing "Implant" should do to the tooth's record, is a
+        // clinician's call. Here they are labels on the record, nothing more.
+        crownTypeTitle: 'Crown type',
+        crownTypes: [
+          { id: 'single-crown', label: 'Single crown' },
+          { id: 'abutment', label: 'Abutment' },
+          { id: 'pontic', label: 'Pontic' },
+        ],
+        crownBaseTitle: 'Crown base',
+        crownBases: [
+          { id: 'natural', label: 'Natural' },
+          { id: 'implant', label: 'Implant' },
+        ],
+      },
+      records: [
+        {
+          id: 'r-16-1',
+          fdi: 16,
+          name: 'Composite filling',
+          paint: 'composite',
+          surfaces: ['mesial'],
+          placedOn: '2021-03-14',
+          provider: 'Dr. Louie Al-Faraje',
+        },
+        {
+          id: 'r-16-2',
+          fdi: 16,
+          name: 'Sealant',
+          paint: 'sealant',
+          surfaces: ['buccal'],
+          placedOn: '2019-09-02',
+          provider: 'Dr. Maya Lindqvist',
+        },
+        {
+          id: 'r-26-1',
+          fdi: 26,
+          name: 'Composite filling',
+          paint: 'composite',
+          surfaces: ['mesial', 'occlusal'],
+          placedOn: '2020-11-20',
+          provider: 'Dr. Louie Al-Faraje',
+        },
+        {
+          id: 'r-34-1',
+          fdi: 34,
+          name: 'Composite filling',
+          paint: 'composite',
+          surfaces: ['distal'],
+          placedOn: '2021-06-08',
+          provider: 'Dr. Tomas Reyes',
+        },
+        {
+          id: 'r-46-1',
+          fdi: 46,
+          name: 'Inlay',
+          surfaces: ['occlusal'],
+          placedOn: '2018-04-17',
+          provider: 'Dr. Priya Nair',
+        },
+      ],
+    },
     implants: {
       disclaimer: 'Sample fixture record — confirm against the surgical notes',
       badge: 'Implant',
@@ -1841,10 +2461,356 @@ export const patientChart: PatientChartScreen = {
         },
       ],
     },
+    findingCards: { label: 'Findings on this chart', toothPrefix: 'Tooth' },
     legend: { title: 'Legend', hideLabel: 'Hide legend', showLabel: 'Show legend' },
     footerActions: {
       start: { id: 'chart-history', label: 'Chart history', icon: 'history' },
       end: { id: 'chart-help', label: 'Charting help', icon: 'help' },
+    },
+    toothPanel: {
+      tabsLabel: 'Tooth record sections',
+      tabs: [
+        { id: 'general', label: 'Overview' },
+        { id: 'medication', label: 'Medication' },
+        { id: 'history', label: 'History' },
+      ],
+      empty: {
+        medication: 'No medication recorded for this tooth.',
+        history:
+          'No actions marked on this tooth yet. “Add treatment” on one of its records adds it here.',
+      },
+      titlePrefix: 'Tooth',
+      close: 'Close tooth details',
+      toothRail: 'Select a tooth',
+      railFlags: {
+        dental: 'caries charted',
+        perio: 'probed',
+        endo: 'root canal charted',
+        implant: 'implant placed',
+      },
+      emptyOverview: {
+        title: 'No problems charted',
+        body: 'This tooth is healthy or has not been examined yet.',
+      },
+      back: 'Back to overview',
+      quickAdd: { placeholder: 'Add…', label: 'Add a note to this tooth', noteLabel: 'Note' },
+      unavailableHint: 'Not built yet',
+      /*
+       * ⚠️ SYNTHETIC. Nobody prescribed any of this. The drugs and strengths
+       * are common dental prescriptions, picked to make the table read like
+       * one, and the NPI and DEA numbers are not in either registry's real
+       * format. A medication record is a clinical record: the list, the
+       * strengths and the reasons all need a clinician's sign-off before any
+       * of it is shown as fact. (The on-screen "sample data" line was taken
+       * off the table on request; this note is now the only place that says so.)
+       *
+       * Kept clear of the two allergies on this record (penicillin, latex), so
+       * the sample does not prescribe against its own allergy flags.
+       *
+       * Written against the teeth that already carry something on the chart —
+       * the carious ones, the implant sites, the root canals — so each list
+       * has a reason to exist. Every other tooth has none, and says so.
+       */
+      medication: {
+        label: 'Medication prescribed for this tooth',
+        columns: {
+          name: 'Medication name',
+          prescribed: 'Date prescribed',
+          reason: 'Reason',
+          provider: 'Provider',
+          pharmacy: 'Pharmacy name',
+          npi: 'NPI number',
+          dea: 'DEA number',
+        },
+        dateFormat: 'MM.DD.YY',
+        filters: { all: 'All', by: 'Filter by' },
+        noMatches: 'No medication matches. Set the filters back to All.',
+        rows: [
+          {
+            id: 'rx-16-1',
+            fdi: 16,
+            name: 'Clindamycin 300 mg',
+            prescribed: '2022-11-28',
+            reason: 'Infection',
+            provider: 'Dr. Louie Al-Faraje',
+            pharmacy: 'Riverside Pharmacy',
+            npi: '2324098',
+            dea: '837299002',
+          },
+          {
+            id: 'rx-16-2',
+            fdi: 16,
+            name: 'Ibuprofen 400 mg',
+            prescribed: '2022-11-28',
+            reason: 'Pain',
+            provider: 'Dr. Louie Al-Faraje',
+            pharmacy: 'Riverside Pharmacy',
+            npi: '2324098',
+            dea: '837299002',
+          },
+          {
+            id: 'rx-16-3',
+            fdi: 16,
+            name: 'Chlorhexidine 0.12% rinse',
+            prescribed: '2022-12-11',
+            reason: 'Gum inflammation',
+            provider: 'Dr. Amanda Jones',
+            pharmacy: 'Oak Street Pharmacy',
+            npi: '3526799',
+            dea: '846374652',
+          },
+          {
+            id: 'rx-16-4',
+            fdi: 16,
+            name: 'Fluoride 5000 ppm toothpaste',
+            prescribed: '2022-12-11',
+            reason: 'Caries prevention',
+            provider: 'Dr. Amanda Jones',
+            pharmacy: 'Oak Street Pharmacy',
+            npi: '3526799',
+            dea: '846374652',
+          },
+          {
+            id: 'rx-34-1',
+            fdi: 34,
+            name: 'Fluoride 5000 ppm toothpaste',
+            prescribed: '2022-12-11',
+            reason: 'Caries prevention',
+            provider: 'Dr. Amanda Jones',
+            pharmacy: 'Oak Street Pharmacy',
+            npi: '3526799',
+            dea: '846374652',
+          },
+          {
+            id: 'rx-34-2',
+            fdi: 34,
+            name: 'Paracetamol 500 mg',
+            prescribed: '2022-10-03',
+            reason: 'Pain',
+            provider: 'Dr. John Hurst',
+            pharmacy: 'Harbor Pharmacy',
+            npi: '9900360',
+            dea: '123456789',
+          },
+          {
+            id: 'rx-25-1',
+            fdi: 25,
+            name: 'Azithromycin 500 mg',
+            prescribed: '2022-06-14',
+            reason: 'Implant surgery',
+            provider: 'Dr. Louie Al-Faraje',
+            pharmacy: 'Riverside Pharmacy',
+            npi: '2324098',
+            dea: '837299002',
+          },
+          {
+            id: 'rx-25-2',
+            fdi: 25,
+            name: 'Ibuprofen 600 mg',
+            prescribed: '2022-06-14',
+            reason: 'Post-operative pain',
+            provider: 'Dr. Louie Al-Faraje',
+            pharmacy: 'Riverside Pharmacy',
+            npi: '2324098',
+            dea: '837299002',
+          },
+          {
+            id: 'rx-25-3',
+            fdi: 25,
+            name: 'Chlorhexidine 0.12% rinse',
+            prescribed: '2022-06-21',
+            reason: 'Post-operative care',
+            provider: 'Dr. Daniel Lee',
+            pharmacy: 'Harbor Pharmacy',
+            npi: '9900360',
+            dea: '123456789',
+          },
+          {
+            id: 'rx-26-1',
+            fdi: 26,
+            name: 'Clindamycin 300 mg',
+            prescribed: '2022-03-02',
+            reason: 'Implant surgery',
+            provider: 'Dr. Daniel Lee',
+            pharmacy: 'Harbor Pharmacy',
+            npi: '9900360',
+            dea: '123456789',
+          },
+          {
+            id: 'rx-26-2',
+            fdi: 26,
+            name: 'Paracetamol 500 mg',
+            prescribed: '2022-03-02',
+            reason: 'Post-operative pain',
+            provider: 'Dr. Daniel Lee',
+            pharmacy: 'Harbor Pharmacy',
+            npi: '9900360',
+            dea: '123456789',
+          },
+          {
+            id: 'rx-11-1',
+            fdi: 11,
+            name: 'Ibuprofen 400 mg',
+            prescribed: '2021-09-20',
+            reason: 'Pulpitis pain',
+            provider: 'Dr. John Hurst',
+            pharmacy: 'Oak Street Pharmacy',
+            npi: '3526799',
+            dea: '846374652',
+          },
+          {
+            id: 'rx-11-2',
+            fdi: 11,
+            name: 'Clindamycin 150 mg',
+            prescribed: '2021-09-22',
+            reason: 'Infection',
+            provider: 'Dr. John Hurst',
+            pharmacy: 'Oak Street Pharmacy',
+            npi: '3526799',
+            dea: '846374652',
+          },
+          {
+            id: 'rx-21-1',
+            fdi: 21,
+            name: 'Metronidazole 400 mg',
+            prescribed: '2021-11-08',
+            reason: 'Infection',
+            provider: 'Dr. Amanda Jones',
+            pharmacy: 'Riverside Pharmacy',
+            npi: '2324098',
+            dea: '837299002',
+          },
+          {
+            id: 'rx-37-1',
+            fdi: 37,
+            name: 'Naproxen 250 mg',
+            prescribed: '2022-08-19',
+            reason: 'Pain',
+            provider: 'Dr. Daniel Lee',
+            pharmacy: 'Harbor Pharmacy',
+            npi: '9900360',
+            dea: '123456789',
+          },
+          {
+            id: 'rx-44-1',
+            fdi: 44,
+            name: 'Chlorhexidine 0.2% gel',
+            prescribed: '2022-05-05',
+            reason: 'Gum inflammation',
+            provider: 'Dr. Louie Al-Faraje',
+            pharmacy: 'Riverside Pharmacy',
+            npi: '2324098',
+            dea: '837299002',
+          },
+        ],
+      },
+      pathologies: {
+        label: 'Kind of pathology',
+        options: [
+          { id: 'caries', label: 'Caries', available: true },
+          { id: 'fracture', label: 'Fracture', available: false },
+          { id: 'tooth-wear', label: 'Tooth wear', available: false },
+          { id: 'discoloration', label: 'Discoloration', available: false },
+          { id: 'apical', label: 'Apical', available: false },
+          { id: 'development-disorder', label: 'Development disorder', available: false },
+        ],
+      },
+      history: {
+        label: 'Actions marked on this tooth',
+        done: 'Done',
+        noSurfaces: 'No surfaces assessed',
+        wholeCrown: 'Whole crown',
+        updatesTitle: 'Updates',
+        dateFormat: 'MM.DD.YY',
+        /*
+         * ⚠️ SYNTHETIC. None of these visits happened. The entries are written
+         * to agree with what the chart already shows for each tooth — the
+         * caries charted on 12.11.22, the fillings in `restorations`, the
+         * implant placements — so the history reads as the same record rather
+         * than a second story. Dates, wording and providers are all invented.
+         */
+        updates: [
+          {
+            id: 'u-16-3',
+            fdi: 16,
+            date: '2022-12-11',
+            title: 'Caries charted',
+            detail: 'Occlusal · into dentin, no cavitation. Restoration planned.',
+            by: 'Dr. Louie Al-Faraje',
+          },
+          {
+            id: 'u-16-2',
+            fdi: 16,
+            date: '2021-03-14',
+            title: 'Composite filling placed',
+            detail: 'Mesial surface.',
+            by: 'Dr. Louie Al-Faraje',
+          },
+          {
+            id: 'u-16-1',
+            fdi: 16,
+            date: '2019-09-02',
+            title: 'Sealant applied',
+            detail: 'Buccal surface.',
+            by: 'Dr. Maya Lindqvist',
+          },
+          {
+            id: 'u-34-2',
+            fdi: 34,
+            date: '2022-12-11',
+            title: 'Caries charted',
+            detail: 'Occlusal · into dentin, no cavitation. Restoration planned.',
+            by: 'Dr. Louie Al-Faraje',
+          },
+          {
+            id: 'u-34-1',
+            fdi: 34,
+            date: '2021-06-08',
+            title: 'Composite filling placed',
+            detail: 'Distal surface.',
+            by: 'Dr. Tomas Reyes',
+          },
+          {
+            id: 'u-26-1',
+            fdi: 26,
+            date: '2020-11-20',
+            title: 'Composite filling placed',
+            detail: 'Mesial and occlusal surfaces.',
+            by: 'Dr. Louie Al-Faraje',
+          },
+          {
+            id: 'u-46-1',
+            fdi: 46,
+            date: '2018-04-17',
+            title: 'Inlay cemented',
+            detail: 'Occlusal surface.',
+            by: 'Dr. Priya Nair',
+          },
+        ],
+      },
+      icons: {
+        // The glyph the record's own "Implant exam" section already carries.
+        addImplant: 'implantExam',
+        // The alert glyph: something is wrong with the tooth.
+        addPathology: 'alerts',
+        // A wrench: work done to put the tooth right.
+        addRestoration: 'restoration',
+        quickAdd: 'add',
+      },
+      actions: {
+        addImplant: 'Add implant',
+        addPathology: 'Add pathology',
+        addRestoration: 'Add restoration',
+        addTreatment: 'Add treatment',
+        save: 'Save',
+        reset: 'Reset',
+      },
+      resetConfirm: {
+        title: 'Reset this record?',
+        body: 'What is entered for {record} on {tooth} will be taken back, and every surface marked on the tooth’s 3D model will be cleared.',
+        cancel: 'Cancel',
+        confirm: 'Reset',
+      },
     },
   },
 }

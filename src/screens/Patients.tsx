@@ -15,16 +15,13 @@
  * (`src/data/patients.ts`) and brings its own rail — there is no shared shell.
  */
 
-import { useCallback, useMemo, useState, type SyntheticEvent } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
-import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
-import Select from '@mui/material/Select'
-import Snackbar from '@mui/material/Snackbar'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
@@ -37,10 +34,11 @@ import {
 } from '@mui/x-data-grid'
 import dayjs from 'dayjs'
 
+import { distinctOptions, type FilterOption } from '../components/filterOptions.ts'
+import { HeaderFilter } from '../components/HeaderFilter.tsx'
 import { Icon } from '../components/Icon.tsx'
 import { Rail } from '../components/Rail.tsx'
 import {
-  hasChart,
   patients,
   type Appointment,
   type PatientFilterId,
@@ -68,16 +66,6 @@ type Filters = Record<PatientFilterId, string>
 /** `''` on every filter means "All". */
 const NO_FILTERS: Filters = { status: '', procedure: '', provider: '' }
 
-interface FilterOption {
-  value: string
-  label: string
-}
-
-const distinct = (values: (string | null)[]): FilterOption[] =>
-  [...new Set(values.filter((value): value is string => value !== null))]
-    .sort((a, b) => a.localeCompare(b))
-    .map((value) => ({ value, label: value }))
-
 /**
  * What each header filter offers. Status comes from the dataset's own list;
  * the other two are whatever values the rows actually hold, so an option can
@@ -85,8 +73,8 @@ const distinct = (values: (string | null)[]): FilterOption[] =>
  */
 const FILTER_OPTIONS: Record<PatientFilterId, FilterOption[]> = {
   status: patients.statuses.map((status) => ({ value: status.id, label: status.label })),
-  procedure: distinct(patients.rows.map((row) => row.procedure)),
-  provider: distinct(patients.rows.map((row) => row.provider)),
+  procedure: distinctOptions(patients.rows.map((row) => row.procedure)),
+  provider: distinctOptions(patients.rows.map((row) => row.provider)),
 }
 
 function matches(row: PatientRow, query: string, filters: Filters) {
@@ -97,67 +85,9 @@ function matches(row: PatientRow, query: string, filters: Filters) {
   return `${row.id} ${row.firstName} ${row.lastName}`.toLowerCase().includes(query)
 }
 
-/**
- * A column header that carries its own filter: the label, and under it a
- * select reading "All" until it is narrowed.
- *
- * ⚠ The select lives INSIDE a header the grid sorts on click and on Enter, and
- *   React bubbles events out of the select's portalled menu as if it were a
- *   child. Without the two `stop` handlers, picking an option would also sort
- *   the column.
- */
-function HeaderFilter({
-  title,
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  title: string
-  label: string
-  value: string
-  options: FilterOption[]
-  onChange: (value: string) => void
-}) {
-  const stop = (event: SyntheticEvent) => event.stopPropagation()
-
-  return (
-    <Stack sx={{ minWidth: 0, alignItems: 'flex-start' }}>
-      <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>
-        {title}
-      </Typography>
-      <Box onClick={stop} onKeyDown={stop} sx={{ maxWidth: '100%' }}>
-        <Select
-          variant="standard"
-          disableUnderline
-          displayEmpty
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          SelectDisplayProps={{ 'aria-label': label }}
-          sx={{
-            typography: 'caption',
-            // A narrowed filter reads as set by its words, and is darkened to
-            // match — never by colour alone.
-            color: value ? 'text.primary' : 'text.secondary',
-            fontWeight: value ? 600 : 400,
-          }}
-        >
-          <MenuItem value="">{patients.filters.all}</MenuItem>
-          {options.map((option) => (
-            <MenuItem key={option.value} value={option.value}>
-              {option.label}
-            </MenuItem>
-          ))}
-        </Select>
-      </Box>
-    </Stack>
-  )
-}
-
 function PatientList({ onOpenChart }: { onOpenChart: () => void }) {
   const [query, setQuery] = useState('')
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
-  const [noChartOpen, setNoChartOpen] = useState(false)
 
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -165,24 +95,22 @@ function PatientList({ onOpenChart }: { onOpenChart: () => void }) {
   }, [query, filters])
 
   /**
-   * Picking a patient. Only a row with a chart behind it leaves the list; any
-   * other row SAYS it has none rather than doing nothing — a dead click in a
-   * list of patients reads as a broken app, and opening the one chart that
-   * exists under another patient's name would be worse.
+   * Picking a patient opens the patient page — whichever row it was.
+   *
+   * ⚠ There is ONE synthetic record behind that page (`patientChart`), so every
+   *   row lands on the same patient. It used to be that only the matching row
+   *   opened and the rest said they had no chart; opening from any row was
+   *   asked for so the list can be walked through as a flow. A real backend
+   *   takes the row's `id` here and loads that patient's record.
    */
-  const open = useCallback(
-    (row: PatientRow) => {
-      if (hasChart(row)) onOpenChart()
-      else setNoChartOpen(true)
-    },
-    [onOpenChart],
-  )
+  const open = useCallback(() => onOpenChart(), [onOpenChart])
 
   const columns = useMemo<GridColDef<PatientRow>[]>(() => {
     const filterHeader = (field: PatientFilterId) => () => (
       <HeaderFilter
         title={patients.columns[field]}
         label={patients.filters.labels[field]}
+        allLabel={patients.filters.all}
         value={filters[field]}
         options={FILTER_OPTIONS[field]}
         onChange={(value) => setFilters((current) => ({ ...current, [field]: value }))}
@@ -253,7 +181,7 @@ function PatientList({ onOpenChart }: { onOpenChart: () => void }) {
             <GridActionsCellItem
               showInMenu
               label={patients.rowMenu.openChart}
-              onClick={() => open(params.row)}
+              onClick={open}
             />
           </GridActionsCell>
         ),
@@ -320,11 +248,11 @@ function PatientList({ onOpenChart }: { onOpenChart: () => void }) {
           // as "selected" for when the user comes back.
           rowSelection={false}
           onCellClick={(params) => {
-            if (params.field !== ACTIONS_FIELD) open(params.row)
+            if (params.field !== ACTIONS_FIELD) open()
           }}
           // Keyboard parity for the click: Enter on any focused cell of the row.
           onCellKeyDown={(params, event) => {
-            if (event.key === 'Enter' && params.field !== ACTIONS_FIELD) open(params.row)
+            if (event.key === 'Enter' && params.field !== ACTIONS_FIELD) open()
           }}
           initialState={{ pagination: { paginationModel: { pageSize: PAGE_SIZES[0] } } }}
           pageSizeOptions={PAGE_SIZES}
@@ -339,6 +267,11 @@ function PatientList({ onOpenChart }: { onOpenChart: () => void }) {
             '& .MuiDataGrid-cell[data-field="id"], & .MuiDataGrid-cell[data-field="dateOfBirth"]': {
               fontVariantNumeric: 'tabular-nums',
             },
+            // Every header title starts on the same line at the top of the
+            // header. Three headers carry a filter under their title and four
+            // do not; centred, the plain titles sat half a line lower than the
+            // ones with a filter.
+            '& .MuiDataGrid-columnHeaderTitleContainer': { alignItems: 'flex-start', pt: 1.25 },
             '& .MuiDataGrid-row': { cursor: 'pointer' },
             // No cell outline on a click: here a click opens the row, it does
             // not pick a cell, and the stock ring was left behind on whichever
@@ -353,13 +286,6 @@ function PatientList({ onOpenChart }: { onOpenChart: () => void }) {
           }}
         />
       </Box>
-
-      <Snackbar
-        open={noChartOpen}
-        autoHideDuration={4000}
-        onClose={() => setNoChartOpen(false)}
-        message={patients.noChartMessage}
-      />
     </Paper>
   )
 }
@@ -690,9 +616,12 @@ function DaySchedulePanel() {
 
 export default function Patients({
   onOpenChart,
+  onNavigate,
 }: {
   /** Leaves the list for the record — called when a row with a chart is picked. */
   onOpenChart: () => void
+  /** A rail item was picked; the app decides whether it leads anywhere. */
+  onNavigate: (id: string) => void
 }) {
   return (
     <Box
@@ -707,7 +636,7 @@ export default function Patients({
         color: 'text.primary',
       }}
     >
-      <Rail rail={patients.rail} />
+      <Rail rail={patients.rail} onSelect={onNavigate} />
       <Stack
         direction="row"
         sx={{

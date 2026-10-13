@@ -129,28 +129,15 @@ export interface PatientsScreen {
   unassignedProvider: string
   rowMenu: { openChart: string }
   /**
-   * The one record this frontend has a chart for. A row opens the chart only
-   * when its `id` matches — see `hasChart`.
+   * The one record this frontend has a patient page for. The list opens that
+   * page from every row; the schedule still uses this to tell its own visits
+   * apart.
    */
   chartedPatientId: string
-  /** Said when a row without a chart is picked, instead of doing nothing. */
-  noChartMessage: string
   /** Shown in the table when the search and filters leave no rows. */
   noMatches: string
   rows: PatientRow[]
   schedule: DaySchedule
-}
-
-/**
- * Whether picking this row can open a chart.
- *
- * Only one synthetic record exists (`patientChart`). Matching on the record's
- * own `id` — rather than flagging a row by hand — means a row can never open
- * somebody else's chart: if the two ids drift apart, the row simply stops
- * opening anything.
- */
-export function hasChart(row: PatientRow, screen: PatientsScreen = patients): boolean {
-  return row.id === screen.chartedPatientId
 }
 
 export const patients: PatientsScreen = {
@@ -196,7 +183,6 @@ export const patients: PatientsScreen = {
   rowMenu: { openChart: 'Open chart' },
 
   chartedPatientId: patientChart.patient.id,
-  noChartMessage: 'No chart on file for this patient yet.',
   noMatches: 'No patients match. Clear the search or set the filters back to All.',
 
   rows: [

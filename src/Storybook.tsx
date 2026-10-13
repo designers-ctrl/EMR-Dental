@@ -27,7 +27,7 @@ import {
   Avatar, AvatarGroup, Badge, Box, Breadcrumbs, Button, ButtonGroup, Checkbox, Chip,
   CircularProgress, Container, CssBaseline, Dialog, DialogActions, DialogContent,
   DialogContentText, DialogTitle, Divider, FormControl, FormControlLabel, FormLabel,
-  InputLabel, LinearProgress, Link, List, ListItemButton, ListItemIcon, ListItemText,
+  InputAdornment, InputLabel, LinearProgress, Link, List, ListItemButton, ListItemIcon, ListItemText,
   MenuItem, Pagination, Paper, Radio, RadioGroup, Rating, Select, Skeleton, Slider,
   Snackbar, Stack, Step, StepLabel, Stepper, Switch, Tab, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Tabs, TextField, ToggleButton, ToggleButtonGroup,
@@ -822,6 +822,23 @@ function InputSection() {
         <TextField label="Small" size="small" />
         <TextField label="Medium" size="medium" />
         <TextField label="Clinical note" multiline rows={3} sx={{ minWidth: 260 }} />
+      </Row>
+
+      <Row label="Leading icon (InputAdornment)">
+        <TextField
+          size="small"
+          placeholder="Add…"
+          slotProps={{
+            htmlInput: { 'aria-label': 'Add a note' },
+            input: {
+              startAdornment: (
+                <InputAdornment position="start" sx={{ color: 'text.secondary' }}>
+                  <EditNoteOutlined sx={{ fontSize: 18 }} />
+                </InputAdornment>
+              ),
+            },
+          }}
+        />
       </Row>
 
       <Row label="Select & autocomplete">
