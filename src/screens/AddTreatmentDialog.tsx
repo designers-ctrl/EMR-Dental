@@ -253,8 +253,14 @@ export function AddTreatmentDialog({
   category,
   onClose,
   onSave,
+  initial,
 }: {
   open: boolean
+  /**
+   * A plan already saved, to edit — the dialog opens filled in from it.
+   * Absent, it opens empty, with the dataset's starter prescription line.
+   */
+  initial?: TreatmentPlanLine
   /** The tooth, in both notations and with its type — "Tooth 28R · FDI 44 · Premolar". */
   toothLine: string
   /** The surface in hand on the record the dialog was opened from. */
@@ -271,9 +277,11 @@ export function AddTreatmentDialog({
   const notesId = `${baseId}-notes`
   const prescriptionId = `${baseId}-prescription`
 
-  const [procedure, setProcedure] = useState<TreatmentProcedure | null>(null)
-  const [notes, setNotes] = useState('')
-  const [drafts, setDrafts] = useState<PrescriptionDraft[]>(treatment.prescription.drafts)
+  const [procedure, setProcedure] = useState<TreatmentProcedure | null>(initial?.procedure ?? null)
+  const [notes, setNotes] = useState(initial?.notes ?? '')
+  const [drafts, setDrafts] = useState<PrescriptionDraft[]>(
+    initial?.prescriptions ?? treatment.prescription.drafts,
+  )
   const [editingId, setEditingId] = useState<string | null>(null)
   // Raised by a Save with no procedure; lowered the moment one is chosen.
   const [missingProcedure, setMissingProcedure] = useState(false)

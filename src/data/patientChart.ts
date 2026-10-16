@@ -87,8 +87,12 @@ export type IconName =
 
 // ─── TOOTH PANEL ──────────────────────────────────────────────────────────
 
-/** The sections of a tooth's record, as the tabs in its panel. */
-export type ToothPanelTabId = 'general' | 'medication' | 'history'
+/**
+ * The sections of a tooth's record. Three are tabs in its panel — Overview,
+ * Treatment, Prescriptions — and `history` is opened from the History button
+ * in the panel's heading instead.
+ */
+export type ToothPanelTabId = 'general' | 'treatment' | 'medication' | 'history'
 
 /**
  * What every tooth panel has in common, whichever chart opened it: the tooth
@@ -96,9 +100,9 @@ export type ToothPanelTabId = 'general' | 'medication' | 'history'
  *
  * `general` opens on an OVERVIEW — one card per thing charted on the tooth in
  * the chart type in view — and a card opens that record's own form or detail.
- * `medication` is a table of what was prescribed for the tooth, and `history`
- * a list of the actions marked on it; a tooth with neither says so with
- * `empty`.
+ * `treatment` lists the actions marked on it, `medication` is a table of what
+ * was prescribed for it, and `history` the dated updates on record; a tooth
+ * with nothing in one says so with `empty`.
  */
 /** One kind of pathology in the "Add pathology" menu. */
 export interface PathologyOption {
@@ -110,7 +114,14 @@ export interface PathologyOption {
 export interface ToothPanelFrame {
   /** Names the tab strip for assistive tech. */
   tabsLabel: string
-  tabs: { id: ToothPanelTabId; label: string }[]
+  tabs: { id: Exclude<ToothPanelTabId, 'history'>; label: string }[]
+  /** The button in the heading that opens the tooth's dated history. */
+  historyButton: string
+  /**
+   * The overview's two groups of cards: what is wrong with the tooth, and the
+   * work done on it (fillings, crowns, implants).
+   */
+  overviewGroups: { pathologies: string; restorations: string }
   /** Said in a tab with nothing recorded for the tooth. */
   empty: Record<Exclude<ToothPanelTabId, 'general'>, string>
   /** Before the tooth's number in the heading, and the close button's name. */
@@ -138,7 +149,27 @@ export interface ToothPanelFrame {
    * the empty field, `label` its accessible name, `noteLabel` the word under
    * each note it adds.
    */
-  quickAdd: { placeholder: string; label: string; noteLabel: string }
+  quickAdd: {
+    placeholder: string
+    label: string
+    noteLabel: string
+    /** Names the row of suggestion chips inside the field. */
+    suggestionsLabel: string
+    /** Names the arrow button that enters what was typed. */
+    submitLabel: string
+    /**
+     * How many suggestion chips show at first; the rest fold into one
+     * "+ {n} more" chip (`moreLabel`) that unfolds them.
+     */
+    visibleSuggestions: number
+    moreLabel: string
+    /**
+     * One-click shortcuts inside the field. `id` says what each one starts:
+     * `caries` the caries form, `treatment` the treatment dialog, and any
+     * other id the restoration form of that kind (`filling`, `crown`…).
+     */
+    suggestions: { id: string; label: string }[]
+  }
   /** Said on hover/focus over an "Add…" button with no form behind it yet. */
   unavailableHint: string
   /**
@@ -159,8 +190,12 @@ export interface ToothPanelFrame {
     addImplant: string
     addPathology: string
     addRestoration: string
-    /** On an open record: mark the tooth for treatment. */
+    /** In the caries form's Treatment block: opens the treatment dialog. */
     addTreatment: string
+    /** Beside the block's heading once a plan is saved: reopens the dialog on it. */
+    editTreatment: string
+    /** On the caries record's bottom edge: mark the tooth to be watched. */
+    monitor: string
     /**
      * On an open record: done, back to the overview. Entries are kept as they
      * are made, so this does not gate anything — it closes the record.
@@ -179,11 +214,20 @@ export interface ToothPanelFrame {
 }
 
 /** One prescription, written against the tooth it was given for. */
+/**
+ * The pack shots the Prescriptions cards can show. Only two exist — the view
+ * maps each id to its file in `src/assets/medications/`; a medication with no
+ * shot gets the prescription glyph in its place.
+ */
+export type MedicationImageId = 'fluoride-toothpaste' | 'paracetamol'
+
 export interface ToothMedication {
   id: string
   fdi: number
   /** The drug and its strength, as one label. */
   name: string
+  /** A pack shot, where one exists. */
+  image?: MedicationImageId
   /** ISO `YYYY-MM-DD`, so it sorts as a date. Shown through `dateFormat`. */
   prescribed: string
   reason: string
@@ -294,8 +338,10 @@ export interface RailGroup {
  * the rail, below the groups.
  */
 export interface RailAccount {
-  /** Shown on hover, and read out as part of the avatar button's name. */
+  /** Shown beside the avatar when the rail opens, and read out as part of the avatar button's name. */
   name: string
+  /** Shown under the name when the rail opens. */
+  email: string
   /** What the avatar shows. */
   initials: string
   /** Names the avatar button and its menu for assistive tech. */
@@ -310,6 +356,8 @@ export interface RailAccount {
 }
 
 export interface AppRail {
+  /** The product's name — the logo's accessible name; the logotype spells it. */
+  brandName: string
   groups: RailGroup[]
   /** `id` of the item drawn in the active state. */
   activeItemId: string
@@ -693,24 +741,33 @@ export interface PerioMeasure {
 }
 
 /** One way of handling the 3D arch, e.g. drag → rotate. */
-export interface ChartGesture {
+/**
+ * One shortcut on the bar under the chart: the keys, as key caps, and a few
+ * words on what they do. `keys` are drawn one cap each, in order; `joiner`
+ * (e.g. "/") is put between caps that are alternatives rather than a chord.
+ */
+export interface ChartShortcut {
   id: string
-  /** The input, e.g. "Right-drag". */
-  gesture: string
-  /** Its effect as a short verb, for the one-line first-visit tip. */
-  short: string
-  /** Its effect in full, for the help popover. */
+  keys: string[]
+  joiner?: string
   action: string
 }
 
+/**
+ * The keyboard shortcuts the chart answers to, shown on a strip along the
+ * bottom edge of the chart — under the model and the open tooth panel alike,
+ * so the keys are in view while charting.
+ */
 export interface ChartHelp {
-  title: string
-  /** In order; the last is the tooth click, which a chart tab may re-word. */
-  gestures: ChartGesture[]
-  /** Heading of the one-time tip. */
-  tipTitle: string
-  /** Names the tip's close button. */
-  dismissLabel: string
+  /** Names the strip for assistive tech. */
+  label: string
+  shortcuts: ChartShortcut[]
+  /**
+   * Shown over the chart while a tooth number is being typed — `{n}` is the
+   * digits so far — and when the number typed is not a tooth on the chart.
+   */
+  typing: string
+  noSuchTooth: string
 }
 
 export interface PerioChart {
@@ -1092,6 +1149,8 @@ export interface CariesChart {
     tissueTitle: string
     cavitationTitle: string
     gradeTitle: string
+    /** Heading of the block at the form's end that holds "Add treatment". */
+    treatmentTitle: string
     /** Names the footer's two buttons as a group. */
     decisionTitle: string
     tissues: { id: CariesTissue; label: string }[]
@@ -1534,13 +1593,14 @@ export interface Odontogram {
    * overview and in the detail they open; NOT drawn on the 3D arch yet.
    */
   restorations: RestorationChart
-  /** Corner affordances, bottom-left and bottom-right of the chart panel. */
-  footerActions: { start: RailItem; end: RailItem }
+  /** The chart-history button in the control strip, bottom-left of the chart panel. */
+  footerActions: { start: RailItem }
   /** The frame every tooth panel shares — its sections and its two actions. */
   toothPanel: ToothPanelFrame
   /**
-   * The cards down the chart's left edge — one per finding on the chart type
-   * in view. `label` names the list; `toothPrefix` goes before the tooth
+   * The cards down the chart's left edge — one per TOOTH with anything
+   * charted on it in the chart type in view, its findings as badges under
+   * its name. `label` names the list; `toothPrefix` goes before the tooth
    * number on each card.
    */
   findingCards: { label: string; toothPrefix: string }
@@ -1561,6 +1621,7 @@ export const patientChart: PatientChartScreen = {
   title: '3D dental system',
 
   rail: {
+    brandName: 'Novadontics',
     activeItemId: 'patients',
     unavailableHint: 'Not built yet',
     // Schedule and Patients are the only sections with a screen behind them,
@@ -1609,6 +1670,8 @@ export const patientChart: PatientChartScreen = {
       // Synthetic. The same placeholder name the record lists as its primary
       // provider — nobody is actually signed in; there is no auth.
       name: 'Dr. Louie Al-Faraje',
+      // Synthetic too — example.com is reserved and never delivers.
+      email: 'louie.alfaraje@example.com',
       initials: 'LA',
       menuLabel: 'Account',
       items: [
@@ -1860,20 +1923,19 @@ export const patientChart: PatientChartScreen = {
     activeArchView: 'both',
     model: {
       help: {
-        title: 'Getting around the 3D chart',
-        gestures: [
-          { id: 'rotate', gesture: 'Drag', short: 'rotate', action: 'Rotate the arch' },
-          { id: 'move', gesture: 'Right-drag', short: 'move', action: 'Move the arch' },
-          { id: 'zoom', gesture: 'Scroll', short: 'zoom', action: 'Zoom in and out' },
-          {
-            id: 'select',
-            gesture: 'Click a tooth',
-            short: 'select it',
-            action: 'Select it and show its findings',
-          },
+        label: 'Keyboard shortcuts',
+        // Teeth are typed by their Universal number (1–32), the number the
+        // chart's badges and the tooth list show — never FDI, which is a
+        // different tooth for the same digits.
+        shortcuts: [
+          { id: 'tooth', keys: ['1', '32'], joiner: '–', action: 'tooth number (Universal)' },
+          { id: 'enter', keys: ['Enter'], action: 'open the typed tooth' },
+          { id: 'step', keys: ['←', '→'], joiner: '/', action: 'previous / next tooth' },
+          { id: 'close', keys: ['Esc'], action: 'back to overview, then close' },
+          { id: 'charts', keys: ['D', 'P', 'E'], joiner: '/', action: 'Dental / Perio / Endo' },
         ],
-        tipTitle: 'Getting around',
-        dismissLabel: 'Dismiss tip',
+        typing: 'Tooth {n}…',
+        noSuchTooth: 'No tooth {n} on this chart',
       },
       toothLabel: 'Tooth',
       typeLabels: {
@@ -2083,6 +2145,7 @@ export const patientChart: PatientChartScreen = {
         surfacesTitle: 'Surfaces',
         tissueTitle: 'Depth',
         cavitationTitle: 'Cavitation',
+        treatmentTitle: 'Treatment',
         gradeTitle: 'Grade',
         decisionTitle: 'Decision',
         tissues: [
@@ -2461,23 +2524,25 @@ export const patientChart: PatientChartScreen = {
         },
       ],
     },
-    findingCards: { label: 'Findings on this chart', toothPrefix: 'Tooth' },
+    findingCards: { label: 'Teeth with findings', toothPrefix: 'Tooth' },
     legend: { title: 'Legend', hideLabel: 'Hide legend', showLabel: 'Show legend' },
     footerActions: {
       start: { id: 'chart-history', label: 'Chart history', icon: 'history' },
-      end: { id: 'chart-help', label: 'Charting help', icon: 'help' },
     },
     toothPanel: {
       tabsLabel: 'Tooth record sections',
       tabs: [
         { id: 'general', label: 'Overview' },
-        { id: 'medication', label: 'Medication' },
-        { id: 'history', label: 'History' },
+        { id: 'treatment', label: 'Treatment' },
+        { id: 'medication', label: 'Prescriptions' },
       ],
+      historyButton: 'History',
+      overviewGroups: { pathologies: 'Pathologies', restorations: 'Restorations' },
       empty: {
-        medication: 'No medication recorded for this tooth.',
-        history:
-          'No actions marked on this tooth yet. “Add treatment” on one of its records adds it here.',
+        treatment:
+          'No treatment marked on this tooth yet. “Add treatment” on one of its records adds it here.',
+        medication: 'No prescriptions recorded for this tooth.',
+        history: 'Nothing on record for this tooth yet.',
       },
       titlePrefix: 'Tooth',
       close: 'Close tooth details',
@@ -2493,7 +2558,23 @@ export const patientChart: PatientChartScreen = {
         body: 'This tooth is healthy or has not been examined yet.',
       },
       back: 'Back to overview',
-      quickAdd: { placeholder: 'Add…', label: 'Add a note to this tooth', noteLabel: 'Note' },
+      quickAdd: {
+        placeholder: 'Type what needs to be added',
+        label: 'Add a note to this tooth',
+        noteLabel: 'Note',
+        suggestionsLabel: 'Suggestions',
+        submitLabel: 'Add',
+        visibleSuggestions: 2,
+        moreLabel: '+ {n} more',
+        suggestions: [
+          { id: 'caries', label: 'Add caries' },
+          { id: 'treatment', label: 'Add treatment' },
+          { id: 'filling', label: 'Add filling' },
+          { id: 'sealant', label: 'Add sealant' },
+          { id: 'crown', label: 'Add crown' },
+          { id: 'veneer', label: 'Add veneer' },
+        ],
+      },
       unavailableHint: 'Not built yet',
       /*
        * ⚠️ SYNTHETIC. Nobody prescribed any of this. The drugs and strengths
@@ -2563,6 +2644,7 @@ export const patientChart: PatientChartScreen = {
             id: 'rx-16-4',
             fdi: 16,
             name: 'Fluoride 5000 ppm toothpaste',
+            image: 'fluoride-toothpaste',
             prescribed: '2022-12-11',
             reason: 'Caries prevention',
             provider: 'Dr. Amanda Jones',
@@ -2574,6 +2656,7 @@ export const patientChart: PatientChartScreen = {
             id: 'rx-34-1',
             fdi: 34,
             name: 'Fluoride 5000 ppm toothpaste',
+            image: 'fluoride-toothpaste',
             prescribed: '2022-12-11',
             reason: 'Caries prevention',
             provider: 'Dr. Amanda Jones',
@@ -2585,6 +2668,7 @@ export const patientChart: PatientChartScreen = {
             id: 'rx-34-2',
             fdi: 34,
             name: 'Paracetamol 500 mg',
+            image: 'paracetamol',
             prescribed: '2022-10-03',
             reason: 'Pain',
             provider: 'Dr. John Hurst',
@@ -2640,6 +2724,7 @@ export const patientChart: PatientChartScreen = {
             id: 'rx-26-2',
             fdi: 26,
             name: 'Paracetamol 500 mg',
+            image: 'paracetamol',
             prescribed: '2022-03-02',
             reason: 'Post-operative pain',
             provider: 'Dr. Daniel Lee',
@@ -2802,6 +2887,8 @@ export const patientChart: PatientChartScreen = {
         addPathology: 'Add pathology',
         addRestoration: 'Add restoration',
         addTreatment: 'Add treatment',
+        editTreatment: 'Edit',
+        monitor: 'Monitor',
         save: 'Save',
         reset: 'Reset',
       },

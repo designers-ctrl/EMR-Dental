@@ -27,3 +27,5 @@ dist-ssr
 # Kept locally only; tools/extract-teeth-3d.py regenerates the GLB from it.
 *.blend
 *.blend[0-9]*
+.vercel
+.env*

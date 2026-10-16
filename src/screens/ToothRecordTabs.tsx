@@ -14,6 +14,8 @@
 import { useId, useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
+import Divider from '@mui/material/Divider'
 import Link from '@mui/material/Link'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
@@ -22,10 +24,15 @@ import dayjs from 'dayjs'
 
 import { distinctOptions } from '../components/filterOptions.ts'
 import { HeaderFilter } from '../components/HeaderFilter.tsx'
+import { alpha } from '@mui/material/styles'
+
 import { Icon } from '../components/Icon.tsx'
+import fluorideToothpaste from '../assets/medications/fluoride-toothpaste.png'
+import paracetamol from '../assets/medications/paracetamol.png'
 import {
   patientChart,
   type MedicationColumnId,
+  type MedicationImageId,
   type ToothMedication,
 } from '../data/patientChart.ts'
 
@@ -57,6 +64,60 @@ const MEDICATION_WIDTHS: Record<MedicationColumnId, number> = {
   dea: 130,
 }
 
+/** The pack shots by id — see `MedicationImageId`. Stock product photos standing in; not a real patient's medication. */
+const MEDICATION_IMAGES: Record<MedicationImageId, string> = {
+  'fluoride-toothpaste': fluorideToothpaste,
+  paracetamol,
+}
+
+/**
+ * The small picture at the head of a medication card: its pack shot where
+ * one exists, the prescription glyph where none does. `image` is the row's
+ * own; without it the shot is looked up by the drug's name, so a line typed
+ * in the treatment dialog shows the same picture as the record's row for the
+ * same drug. Decorative either way — the name beside it says what it is.
+ */
+export function MedicationThumb({
+  name,
+  image,
+  size = 56,
+}: {
+  name: string
+  image?: MedicationImageId
+  size?: number
+}) {
+  const id =
+    image ??
+    patientChart.odontogram.toothPanel.medication.rows.find((row) => row.name === name)?.image
+  return (
+    <Box
+      aria-hidden
+      sx={{
+        width: size,
+        height: size,
+        flexShrink: 0,
+        borderRadius: 1,
+        bgcolor: 'background.paper',
+        display: 'grid',
+        placeItems: 'center',
+        overflow: 'hidden',
+        color: 'primary.main',
+      }}
+    >
+      {id ? (
+        <Box
+          component="img"
+          src={MEDICATION_IMAGES[id]}
+          alt=""
+          sx={{ width: '100%', height: '100%', objectFit: 'contain', p: 0.5 }}
+        />
+      ) : (
+        <Icon name="erx" size={Math.round(size * 0.43)} />
+      )}
+    </Box>
+  )
+}
+
 /** Header height in px — taller than stock, for the filter under each label. */
 const HEADER_HEIGHT = 64
 
@@ -79,11 +140,97 @@ const NO_FILTERS = Object.fromEntries(
  */
 export function ToothMedicationTable({ fdi }: { fdi: number }) {
   const { medication, empty } = patientChart.odontogram.toothPanel
+  // Newest first, as the history is.
   const prescribed = useMemo(
-    () => medication.rows.filter((row) => row.fdi === fdi),
+    () =>
+      medication.rows
+        .filter((row) => row.fdi === fdi)
+        .sort((a, b) => b.prescribed.localeCompare(a.prescribed)),
     [medication.rows, fdi],
   )
-  return <MedicationTable prescribed={prescribed} emptyText={empty.medication} />
+
+  if (prescribed.length === 0) {
+    return (
+      <Typography variant="body2" color="text.secondary">
+        {empty.medication}
+      </Typography>
+    )
+  }
+
+  /*
+   * One card per prescription — the panel is too narrow for the seven-column
+   * table the Patients record uses, and a tooth has a handful at most. The
+   * drug leads, then why, then when and by whom, and the two registry numbers
+   * last: identifiers, not something to read at a glance.
+   */
+  return (
+    <Stack component="ul" aria-label={medication.label} spacing={1} sx={{ m: 0, p: 0, listStyle: 'none' }}>
+      {prescribed.map((row) => (
+        <Box
+          component="li"
+          key={row.id}
+          sx={{
+            px: 2,
+            py: 1.5,
+            borderRadius: 1.5,
+            bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
+          }}
+        >
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
+            <MedicationThumb name={row.name} image={row.image} />
+            <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+              {/* The drug, with the date it was written opposite — the two
+                  things a glance down the list wants. */}
+              <Stack direction="row" spacing={1.5} sx={{ alignItems: 'baseline' }}>
+                <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1.3, flexGrow: 1 }}>
+                  {row.name}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}
+                >
+                  {dayjs(row.prescribed).format(medication.dateFormat)}
+                </Typography>
+              </Stack>
+              {/* Why, as a badge: the reason is the one word that sorts a list
+                  of prescriptions, so it stands apart from the prose. */}
+              <Chip
+                size="small"
+                label={row.reason}
+                sx={{ mt: 1, bgcolor: 'background.paper', fontWeight: 500 }}
+              />
+            </Box>
+          </Stack>
+
+          {/* Who wrote it and where it goes, under a rule: the prescriber
+              with the person glyph, the pharmacy with its own, and their two
+              registry numbers last — identifiers, not something to read at a
+              glance. */}
+          <Divider sx={{ my: 1.5 }} />
+          {/* The two side by side, 20px apart, in the same ink as the
+              registry line under them. */}
+          <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 2.5, rowGap: 0.5, alignItems: 'center', color: 'text.primary' }}>
+            <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+              <Icon name="general" size={16} />
+              <Typography variant="body2">{row.provider}</Typography>
+            </Stack>
+            <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+              <Icon name="pharmacy" size={16} />
+              <Typography variant="body2">{row.pharmacy}</Typography>
+            </Stack>
+          </Stack>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', mt: 0.5, fontVariantNumeric: 'tabular-nums' }}
+          >
+            {`${medication.columns.npi} ${row.npi} · ${medication.columns.dea} ${row.dea}`}
+          </Typography>
+        </Box>
+      ))}
+    </Stack>
+  )
 }
 
 /**
@@ -241,10 +388,17 @@ export interface ToothAction {
  * by its colour alone, and a slip can be undone by pressing it again.
  */
 export function ToothHistoryList({
+  part,
   fdi,
   actions,
   onToggleDone,
 }: {
+  /**
+   * Which half shows: the `actions` marked on the tooth (the Treatment tab)
+   * or the dated `updates` on record (the History dialog). The two used to
+   * share one tab.
+   */
+  part: 'actions' | 'updates'
   fdi: number
   actions: ToothAction[]
   onToggleDone: (id: string) => void
@@ -262,17 +416,18 @@ export function ToothHistoryList({
     [history.updates, fdi],
   )
 
-  if (actions.length === 0 && updates.length === 0) {
+  const shown = part === 'actions' ? actions.length : updates.length
+  if (shown === 0) {
     return (
       <Typography variant="body2" color="text.secondary">
-        {toothPanel.empty.history}
+        {part === 'actions' ? toothPanel.empty.treatment : toothPanel.empty.history}
       </Typography>
     )
   }
 
   return (
     <Stack spacing={2.5}>
-      {actions.length > 0 && (
+      {part === 'actions' && (
         <Stack
           component="ul"
           aria-label={toothPanel.history.label}
@@ -290,8 +445,7 @@ export function ToothHistoryList({
                 py: 1.25,
                 alignItems: 'center',
                 borderRadius: 1.5,
-                border: '1px solid',
-                borderColor: 'divider',
+                bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
               }}
             >
               <Box sx={{ flexGrow: 1, minWidth: 0 }}>
@@ -325,7 +479,7 @@ export function ToothHistoryList({
         card per update: what, the detail, and under it when and by whom. Read
         only: history is not edited from here.
       */}
-      {updates.length > 0 && (
+      {part === 'updates' && (
         <Box>
           <Typography
             id={updatesId}
@@ -353,8 +507,7 @@ export function ToothHistoryList({
                   py: 1.25,
                   alignItems: 'flex-start',
                   borderRadius: 1.5,
-                  border: '1px solid',
-                  borderColor: 'divider',
+                  bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
                 }}
               >
                 <Box

@@ -230,7 +230,7 @@ export const RESTORATION_PAINT: {
  * that crowding, which is what makes 0.36 hold; much below it and the
  * posterior segment starts to blur together again.
  */
-const DIMMED_OPACITY = 0.36
+const DIMMED_OPACITY = 0.5
 
 /**
  * At most eight materials exist for the whole screen — one per state, dimmed

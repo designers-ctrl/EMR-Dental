@@ -91,6 +91,12 @@ import type {} from '@mui/x-charts/themeAugmentation'
 interface LayoutTokens {
   /** Width of the fixed icon rail down the left edge. */
   railWidth: number
+  /**
+   * Width the rail grows to while hovered (or keyboard-focused), when it shows
+   * the logotype and a label beside every icon. It grows OVER the screen, not
+   * beside it — the layout only ever reserves `railWidth`.
+   */
+  railWidthExpanded: number
   /** Page padding, in spacing units (multiplied by theme.spacing). */
   gutter: number
   /** Square edge of a rail item / header icon button. */
@@ -99,6 +105,7 @@ interface LayoutTokens {
 
 const layout: LayoutTokens = {
   railWidth: 88,
+  railWidthExpanded: 280,
   gutter: 3,
   iconButton: 48,
 }
@@ -172,6 +179,13 @@ export const chartSeriesColors = {
 
 // Registers our custom group on the theme so `theme.layout.railWidth` is
 // typed and autocompletes everywhere.
+// The fourth button variant — see `MuiButton.variants` below.
+declare module '@mui/material/Button' {
+  interface ButtonPropsVariantOverrides {
+    secondary: true
+  }
+}
+
 declare module '@mui/material/styles' {
   interface Theme {
     layout: LayoutTokens
@@ -349,6 +363,34 @@ export const theme = responsiveFontSizes(createTheme({
       defaultProps: {
         colors: CHART_SERIES_LIGHT,
       },
+    },
+    MuiButton: {
+      variants: [
+        {
+          /*
+           * `secondary` — the quiet action beside a contained primary one:
+           * no border, a light grey fill, the body text colour. The fill is
+           * the text colour at 8% (14% hovered), so it reads in both schemes
+           * and the ink on it stays at full contrast (#3D4A5C on ~#EDEEF0 is
+           * about 7:1). Padded like `contained`, so the two sit level.
+           */
+          props: { variant: 'secondary' },
+          style: ({ theme }) => ({
+            padding: '6px 16px',
+            color: theme.vars.palette.text.primary,
+            backgroundColor: `rgba(${theme.vars.palette.text.primaryChannel} / 0.08)`,
+            '&:hover': {
+              backgroundColor: `rgba(${theme.vars.palette.text.primaryChannel} / 0.14)`,
+            },
+            '&.MuiButton-sizeSmall': { padding: '4px 10px' },
+            '&.MuiButton-sizeLarge': { padding: '8px 22px' },
+            '&.Mui-disabled': {
+              color: theme.vars.palette.action.disabled,
+              backgroundColor: theme.vars.palette.action.disabledBackground,
+            },
+          }),
+        },
+      ],
     },
   },
 

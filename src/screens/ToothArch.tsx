@@ -585,12 +585,18 @@ const SURFACE_FRAGMENT = /* glsl */ `
         0.6 * pow(max(dot(n, normalize(kick + v)), 0.0), 18.0);
       float rim = pow(1.0 - max(dot(n, v), 0.0), 2.5);
       fill = fill * mix(1.0, shade, uGloss) + vec3(glint * 0.75 + rim * 0.3) * uGloss;
+      // A non-metal keeps the enamel's own wet glint — the clearcoat the
+      // untouched teeth have — so a filled surface still catches the light
+      // like the tooth around it rather than going matte.
+      fill += vec3(glint * 0.35) * uShade * (1.0 - uGloss);
     }
 
-    // Under the outline, the fill — the whole region, where there is one.
-    float alpha = max(line * uOpacity, uFillOpacity);
+    // A filled region is the fill alone, edge to edge: no outline round it,
+    // so the patch reads as material on the tooth rather than a marked-off
+    // area. A clear region is only its outline.
+    float alpha = uFillOpacity > 0.0 ? uFillOpacity : line * uOpacity;
     if (alpha <= 0.002) discard;
-    gl_FragColor = vec4(mix(fill, uColor, uFillOpacity > 0.0 ? line : 1.0), alpha);
+    gl_FragColor = vec4(uFillOpacity > 0.0 ? fill : uColor, alpha);
     // Colours are handed over in linear space; without this they are written
     // out unconverted and come up darker and more saturated than their hex —
     // the composite blue read as violet.
@@ -679,7 +685,9 @@ function SurfacePatch({
         uOcclusal: { value: OCCLUSAL_SHARE },
         uCervical: { value: CERVICAL_SHARE },
         uGloss: { value: paint?.gloss ?? 0 },
-        uShade: { value: paint?.shade ?? 0 },
+        // Every fill is shaded like enamel unless it is a metal with its own
+        // gloss — the plain grey wash included.
+        uShade: { value: paint ? (paint.gloss ? 0 : (paint.shade ?? 1)) : fill ? 1 : 0 },
         uHatch: { value: paint?.hatch ?? 0 },
         uHatchPeriod: { value: HATCH_PERIOD * dpr },
       },
@@ -1155,9 +1163,12 @@ function Arch({
   onSelect,
   hoveredFdi,
   onHover,
+  highlightFdi,
 }: {
   teeth: Tooth[]
   selectedFdi: number | null
+  /** A tooth to stand out — every other tooth is dimmed around it. */
+  highlightFdi: number | null
   perio: PerioChart | null
   perioReadings: PerioToothReading[]
   cariesStains: ReadonlyMap<number, CariesStain>
@@ -1217,7 +1228,10 @@ function Arch({
         // on the same condition, so the two can never disagree about the site.
         const ring = rings.get(model.node)
         const implanted = fixtures.has(tooth.fdi) && ring !== undefined
-        const dimmed = selectedFdi !== null && selectedFdi !== tooth.fdi
+        // Dimmed around the picked tooth, or around the one a card is
+        // pointing at, when there is no pick.
+        const standOut = selectedFdi ?? highlightFdi
+        const dimmed = standOut !== null && standOut !== tooth.fdi
         const axis: 1 | -1 = tooth.arch === 'upper' ? 1 : -1
 
         /*
@@ -1621,9 +1635,16 @@ export function ToothArch3D({
   viewDirection,
   show,
   onSelect,
+  highlightFdi = null,
 }: {
   teeth: Tooth[]
   selectedFdi: number | null
+  /**
+   * A tooth to stand out while nothing is picked — the one whose card is
+   * hovered. Every other tooth is dimmed to half, the way they are around a
+   * picked tooth.
+   */
+  highlightFdi?: number | null
   /** The perio overlay, or `null` for the plain dental chart. */
   perio?: PerioChart | null
   /** Readings as they stand now, edited by the panel. Empty off the perio tab. */
@@ -1796,6 +1817,7 @@ export function ToothArch3D({
               onSelect={onSelect}
               hoveredFdi={hoveredFdi}
               onHover={setHoveredFdi}
+              highlightFdi={highlightFdi}
             />
             {focusFdi !== null && focusSite && (
               <SiteMarker

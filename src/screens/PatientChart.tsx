@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import AlertTitle from '@mui/material/AlertTitle'
 import Box from '@mui/material/Box'
@@ -12,6 +12,7 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
+import GlobalStyles from '@mui/material/GlobalStyles'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
@@ -31,7 +32,8 @@ import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { darken, lighten, type Theme } from '@mui/material/styles'
+import { alpha, darken, lighten, type Theme } from '@mui/material/styles'
+import { visuallyHidden } from '@mui/utils'
 
 import PhotoCameraOutlined from '@mui/icons-material/PhotoCameraOutlined'
 
@@ -92,13 +94,16 @@ import dayjs from 'dayjs'
 import { Icon } from '../components/Icon.tsx'
 import { Rail } from '../components/Rail.tsx'
 import { ArchGlyph } from './ArchGlyph.tsx'
-import { CARIES_PAINT, ENDO_PAINT, IMPLANT_PAINT, POST_PAINT } from './toothScene.ts'
+import { CARIES_PAINT, ENDO_PAINT, IMPLANT_PAINT, POST_PAINT, enamel } from './toothScene.ts'
+import { useToothThumbnail } from './toothThumbnails.ts'
+import { toothModels } from '../data/toothModels.ts'
 import { ToothArch3D, type ChartLayerVisibility, type RestorationMark } from './ToothArch.tsx'
 import type { CariesStain } from './CariesLayer.tsx'
 import { PatientDetailsDialog } from './PatientDetails.tsx'
 import { ImagingPanel } from './PatientImaging.tsx'
 import { AddTreatmentDialog, type TreatmentPlanLine } from './AddTreatmentDialog.tsx'
-import { ToothHistoryList, ToothMedicationTable, type ToothAction } from './ToothRecordTabs.tsx'
+import { treatment as treatmentCopy } from '../data/treatment.ts'
+import { MedicationThumb, ToothHistoryList, ToothMedicationTable, type ToothAction } from './ToothRecordTabs.tsx'
 
 // ─── PATIENT HEADER ───────────────────────────────────────────────────────
 
@@ -697,6 +702,14 @@ function Allergies({ allergies }: { allergies: PatientAllergies }) {
  * one that shows where a tooth actually sits. What remains of the chart around
  * it is the mode row, the arch selector and the corner actions.
  */
+/** FDI by Universal number, for a tooth typed at the keyboard (Universal is what the chart shows). */
+const FDI_BY_UNIVERSAL = new Map(
+  [...patientChart.odontogram.upper, ...patientChart.odontogram.lower].map((tooth) => [
+    universalFromFdi(tooth.fdi),
+    tooth.fdi,
+  ]),
+)
+
 /** A tooth with nothing recorded about its caries yet. */
 const blankCaries = (fdi: number): CariesToothAssessment => ({
   fdi,
@@ -736,15 +749,10 @@ function ChartPanel() {
     [layers],
   )
   const [chartId, setChartId] = useState(odontogram.activeChartId)
-  const [helpAnchor, setHelpAnchor] = useState<HTMLElement | null>(null)
-  // The first-visit tip shows until dismissed once, on this browser.
-  const [tipOpen, setTipOpen] = useState(() => !readTipSeen())
-  const dismissTip = () => {
-    setTipOpen(false)
-    writeTipSeen()
-  }
   const [archView, setArchView] = useState<ArchView>(odontogram.activeArchView)
   const [selectedFdi, setSelectedFdi] = useState<number | null>(null)
+  /** The tooth whose card is hovered — the model dims the others around it. */
+  const [hoveredCardFdi, setHoveredCardFdi] = useState<number | null>(null)
 
   const showUpper = archView !== 'lower'
   const showLower = archView !== 'upper'
@@ -757,8 +765,6 @@ function ChartPanel() {
   // The endo tab works exactly the same way: same dentition, same camera, with
   // the pulp turned on over it. "Similar view to Dental, plus the canals."
   const endo = chartId === 'endo' ? odontogram.endo : null
-  // What a tooth click does on this tab — the last row of the chart help.
-  const selectHint = perio?.hint ?? endo?.hint ?? null
 
   // Caries, by contrast, is NOT read off `chartId`. A lesion belongs to the
   // tooth rather than to one chart, so it is handed over unconditionally and
@@ -1035,7 +1041,8 @@ function ChartPanel() {
    * in the order the tooth rail lists them.
    *
    * Two things are drawn from it: a tooth's own overview (every record on that
-   * tooth) and the list down the chart's left edge (the `notable` ones).
+   * tooth) and the tooth cards down the chart's left edge (every tooth with a
+   * record, its records as badges).
    */
   /** What a restoration over the whole crown is said to cover, in place of surfaces. */
   const wholeCrownLabel = odontogram.toothPanel.history.wholeCrown
@@ -1052,9 +1059,9 @@ function ChartPanel() {
           key: `perio-${reading.fdi}`,
           fdi: reading.fdi,
           kind: 'perio',
-          notable: deepest.reading.pocketDepth >= perio.flagDepth,
           swatch: 'pocket',
           title: `${perio.labels.pocket} ${deepest.reading.pocketDepth} ${perio.unit}`,
+          short: `${perio.labels.pocket} ${deepest.reading.pocketDepth} ${perio.unit}`,
           detail: [
             perio.siteLabels[tooth.arch][deepest.site],
             deepest.reading.conditions.includes('bleeding') ? perio.labels.bleeding : null,
@@ -1069,9 +1076,9 @@ function ChartPanel() {
           key: `endo-${finding.fdi}`,
           fdi: finding.fdi,
           kind: 'endo',
-          notable: true,
           swatch: finding.status === 'needed' ? 'endo-needed' : 'endo-canal',
           title: endo.title,
+          short: endo.badge,
           detail: `${finding.canals.length} ${endo.labels.canals.toLowerCase()} · ${
             endo.statusLabels[finding.status]
           }`,
@@ -1094,9 +1101,9 @@ function ChartPanel() {
           key: `caries-${fdi}`,
           fdi,
           kind: 'caries',
-          notable: true,
           swatch: 'caries',
           title: caries.legend.label,
+          short: [caries.badge, ...(cariesGrades.get(fdi) ?? [])].join(' '),
           detail: [
             ...[...surfaces].map((surface) => caries.surfaceLabels[surface]),
             ...(cariesGrades.get(fdi) ?? []),
@@ -1111,9 +1118,9 @@ function ChartPanel() {
           fdi: restoration.fdi,
           kind: 'restoration',
           recordId: restoration.id,
-          notable: false,
           swatch: restorations.swatch,
           title: restoration.name,
+          short: restoration.name,
           // Where it is, then when it was placed — or, for one charted here
           // with no date, what it is made of.
           detail: [
@@ -1140,9 +1147,9 @@ function ChartPanel() {
           key: `implant-${fixture.fdi}`,
           fdi: fixture.fdi,
           kind: 'implant',
-          notable: true,
           swatch: 'implant',
           title: implants.legend.label,
+          short: implants.badge,
           detail: `${fixture.diameter} × ${fixture.length} ${implants.unit}`,
         })
       }
@@ -1165,8 +1172,24 @@ function ChartPanel() {
     implants,
     wholeCrownLabel,
   ])
-  /** The list down the chart's left edge. */
-  const findings = useMemo(() => records.filter((record) => record.notable), [records])
+  /*
+   * The list down the chart's left edge: one card per TOOTH with anything
+   * charted on it in the chart in view — a problem, or work already done —
+   * its records as badges under its name. A tooth with nothing on it has no
+   * card. `records` is already in the rail's order, so the cards are too.
+   */
+  const toothCards = useMemo(() => {
+    const byFdi = new Map<number, ChartFinding[]>()
+    for (const record of records) {
+      const list = byFdi.get(record.fdi)
+      if (list) list.push(record)
+      else byFdi.set(record.fdi, [record])
+    }
+    return [...byFdi].flatMap(([fdi, list]) => {
+      const tooth = teeth.find((item) => item.fdi === fdi)
+      return tooth ? [{ tooth, records: list }] : []
+    })
+  }, [records, teeth])
 
   /*
    * The probing site in hand, held here rather than in the panel because the
@@ -1318,17 +1341,57 @@ function ChartPanel() {
     },
   ]
 
-  /** "Save" on a record: entries are already kept, so it is the way back. */
-  const saveButton = (
+  /**
+   * "Monitor" on a record: marks the tooth to be watched — a card on its
+   * Treatment tab and a notice. The quiet action beside Save, so it is the
+   * secondary button.
+   */
+  const monitorButton = selectedTooth ? (
+    <Button
+      variant="secondary"
+      onClick={() => decideCaries(selectedTooth.fdi, 'monitor')}
+      sx={{ flex: '1 1 0', py: 1.25 }}
+    >
+      {odontogram.toothPanel.actions.monitor}
+    </Button>
+  ) : null
+
+  /**
+   * "Save" on a record: entries are already kept, so it is the way back —
+   * but only once the form is complete, so a half-answered record is never
+   * left standing as if it were finished.
+   */
+  const saveButtonFor = (complete: boolean) => (
     <Button
       variant="contained"
       startIcon={<Icon name="check" size={18} />}
       onClick={() => openToothRecord(null)}
+      disabled={!complete}
       sx={{ flex: '1 1 0', py: 1.25 }}
     >
       {odontogram.toothPanel.actions.save}
     </Button>
   )
+  /**
+   * A restoration is complete when every question its kind asks is answered:
+   * a surface where surfaces are picked, the material, and each of the kind's
+   * own follow-ups (quality and detail, or crown type and base).
+   */
+  const restorationComplete = (kind: RestorationKind, draft: RestorationDraft) =>
+    (kind.surfaceChoice !== 'pick' || draft.surfaces.length > 0) &&
+    draft.material !== null &&
+    kind.asks.every((question) => draft[question] !== null)
+  /**
+   * A caries assessment is complete when at least one surface is assessed and
+   * every surface touched has all three answers — depth, cavitation, grade.
+   */
+  const cariesComplete = (assessment: CariesToothAssessment) => {
+    const touched = Object.values(assessment.surfaces)
+    return (
+      touched.length > 0 &&
+      touched.every((surface) => surface.tissue && surface.cavitation && surface.grade)
+    )
+  }
 
   /*
    * The History tab: the actions marked on the tooth in hand.
@@ -1365,7 +1428,23 @@ function ChartPanel() {
     fdi: number
     toothLine: string
     surface: string
+    /** The plan being edited, when the dialog was opened on one. */
+    initial?: TreatmentPlanLine
   } | null>(null)
+  const openTreatmentDialog = (tooth: Tooth, surface: CariesSurface, initial?: TreatmentPlanLine) =>
+    setTreatmentDialog((current) => ({
+      key: (current?.key ?? 0) + 1,
+      open: true,
+      initial,
+      fdi: tooth.fdi,
+      // Both notations and the type, as the panel's own heading.
+      toothLine: [
+        `${odontogram.toothPanel.titlePrefix} ${universalFromFdi(tooth.fdi)}${sideFromFdi(tooth.fdi)}`,
+        `FDI ${tooth.fdi}`,
+        odontogram.model.typeLabels[tooth.type],
+      ].join(' · '),
+      surface: cariesSurfaceLabel(caries, tooth, surface),
+    }))
   const closeTreatmentDialog = () =>
     setTreatmentDialog((current) => (current ? { ...current, open: false } : current))
   // The plan line last saved for each tooth: what its History entry is named by.
@@ -1501,35 +1580,28 @@ function ChartPanel() {
             activeSurface={activeSurface}
             onSurfaceChange={(surface) => setSurfaceInHand({ fdi: selectedTooth.fdi, surface })}
             onEditSurface={editCariesSurface}
+            onAddTreatment={() => openTreatmentDialog(selectedTooth, activeSurface)}
+            addTreatmentLabel={odontogram.toothPanel.actions.addTreatment}
+            plan={treatmentPlans.find((item) => item.fdi === selectedTooth.fdi)?.line ?? null}
+            onEditTreatment={() =>
+              openTreatmentDialog(
+                selectedTooth,
+                activeSurface,
+                treatmentPlans.find((item) => item.fdi === selectedTooth.fdi)?.line,
+              )
+            }
+            editTreatmentLabel={odontogram.toothPanel.actions.editTreatment}
           />
         ),
         footer: (
           <>
-            {/* Opens the treatment dialog; saving THAT marks the tooth for
-                treatment and says so in a notice. A plain action, not a
-                toggle: it shows no pressed state, and the mark is taken off
-                again from the History tab, by ticking it Done. */}
-            <Button
-              variant="outlined"
-              onClick={() =>
-                setTreatmentDialog((current) => ({
-                  key: (current?.key ?? 0) + 1,
-                  open: true,
-                  fdi: selectedTooth.fdi,
-                  // Both notations and the type, as the panel's own heading.
-                  toothLine: [
-                    `${odontogram.toothPanel.titlePrefix} ${universalFromFdi(selectedTooth.fdi)}${sideFromFdi(selectedTooth.fdi)}`,
-                    `FDI ${selectedTooth.fdi}`,
-                    odontogram.model.typeLabels[selectedTooth.type],
-                  ].join(' · '),
-                  surface: cariesSurfaceLabel(caries, selectedTooth, activeSurface),
-                }))
-              }
-              sx={{ flex: '1 1 0', py: 1.25 }}
-            >
-              {odontogram.toothPanel.actions.addTreatment}
-            </Button>
-            {saveButton}
+            {/* Marks the tooth to be monitored: a card on its Treatment tab
+                and a notice. A plain action, not a toggle: it shows no
+                pressed state, and the mark is taken off again from that tab,
+                by ticking it Done. Treatment is started from the block at
+                the form's end instead. */}
+            {monitorButton}
+            {saveButtonFor(cariesComplete(cariesPanelAssessment))}
           </>
         ),
         // Back to nothing recorded for the tooth: every surface and the mark
@@ -1561,7 +1633,7 @@ function ChartPanel() {
             onEdit={editPerioSite}
           />
         ),
-        footer: saveButton,
+        footer: saveButtonFor(true),
         // Back to the readings the record came with. Not to zeros, and not to
         // "never probed": either would state something about the tooth that
         // nobody recorded.
@@ -1589,35 +1661,88 @@ function ChartPanel() {
         (record) => record.id === openRecord?.recordId && record.fdi === selectedTooth.fdi,
       )
       if (!restoration) return null
-      // Read-only: what it is, where, and whatever else is on record for it.
-      // A row is shown only when there is something to put in it.
-      const rows: [string, string | undefined][] = [
-        [
-          restorations.labels.surfaces,
-          restoration.surfaces
-            .map((surface) => cariesSurfaceLabel(caries, selectedTooth, surface))
-            .join(', ') || undefined,
-        ],
-        [restorations.labels.material, restoration.material],
-        [restorations.labels.quality, restoration.quality],
-        [restorations.labels.detail, restoration.detail],
-        [restorations.labels.crownType, restoration.crownType],
-        [restorations.labels.crownBase, restoration.crownBase],
-        [
-          restorations.labels.placed,
-          restoration.placedOn && dayjs(restoration.placedOn).format(restorations.dateFormat),
-        ],
-        [restorations.labels.provider, restoration.provider],
-      ]
+      /*
+       * The same form "Add restoration" opens, filled in from the record, so
+       * going into a filling reads exactly like charting one — and edits go
+       * straight onto the record, the way every other form here keeps its
+       * entries as they are made. The record stores labels and a paint; the
+       * form works in option ids, so each is looked up back.
+       */
+      const { form } = restorations
+      const kind =
+        form.types.find((option) => option.label === restoration.name) ??
+        (restoration.coverage === 'crown'
+          ? form.types.find((option) => option.id === 'crown')
+          : restoration.paint === 'sealant'
+            ? form.types.find((option) => option.id === 'sealant')
+            : form.types.find((option) => option.id === 'filling'))
+      if (!kind) return null
+      const idOf = (options: RestorationOption[], label: string | undefined) =>
+        options.find((option) => option.label === label)?.id ?? null
+      const draft: RestorationDraft = {
+        fdi: restoration.fdi,
+        typeId: kind.id,
+        surfaces: restoration.surfaces,
+        focus: restoration.surfaces[0] ?? null,
+        material:
+          idOf(form.materials, restoration.material) ??
+          form.materials.find((option) => option.paint === restoration.paint)?.id ??
+          null,
+        quality: idOf(form.qualities, restoration.quality),
+        detail: idOf(form.details, restoration.detail),
+        crownType: idOf(form.crownTypes, restoration.crownType),
+        crownBase: idOf(form.crownBases, restoration.crownBase),
+      }
+      const labelOf = (options: RestorationOption[], id: string | null) =>
+        options.find((option) => option.id === id)?.label
       return {
         title: restoration.name,
         body: (
-          <Stack spacing={0.75}>
-            {rows.map(([label, value]) =>
-              value ? <DetailRow key={label} label={label} value={value} /> : null,
-            )}
-          </Stack>
+          <RestorationForm
+            tooth={selectedTooth}
+            caries={caries}
+            restorations={restorations}
+            kind={kind}
+            draft={draft}
+            onChange={(change) => {
+              const next = { ...draft, ...change }
+              setRestorationRecords((current) =>
+                current.map((record) =>
+                  record.id === restoration.id
+                    ? {
+                        ...record,
+                        surfaces: next.surfaces,
+                        material: labelOf(form.materials, next.material),
+                        quality: labelOf(form.qualities, next.quality),
+                        detail: labelOf(form.details, next.detail),
+                        crownType: labelOf(form.crownTypes, next.crownType),
+                        crownBase: labelOf(form.crownBases, next.crownBase),
+                        paint: restorationPaint(restorations, next) ?? record.paint,
+                      }
+                    : record,
+                ),
+              )
+            }}
+          />
         ),
+        footer: (
+          <>
+            {monitorButton}
+            {saveButtonFor(restorationComplete(kind, draft))}
+          </>
+        ),
+        // Back to the restoration as the record came with it — or, for one
+        // charted here, off the tooth altogether: the panel keeps edits as
+        // they are made, so this is the only way to take them back.
+        onReset: () => {
+          const original = restorations.records.find((record) => record.id === restoration.id)
+          setRestorationRecords((current) =>
+            original
+              ? current.map((record) => (record.id === original.id ? original : record))
+              : current.filter((record) => record.id !== restoration.id),
+          )
+          if (!original) openToothRecord(null)
+        },
       }
     }
     if (openKind === 'newRestoration' && restorationDraft?.fdi === selectedTooth.fdi) {
@@ -1644,9 +1769,12 @@ function ChartPanel() {
         footer: (
           // Here Save does save: it is what turns the draft into a record on
           // the tooth. Leaving by Back instead drops the draft.
+          <>
+          {monitorButton}
           <Button
             variant="contained"
             startIcon={<Icon name="check" size={18} />}
+            disabled={!restorationComplete(kind, restorationDraft)}
             onClick={() => {
               setRestorationRecords((current) => [
                 ...current,
@@ -1672,6 +1800,7 @@ function ChartPanel() {
           >
             {odontogram.toothPanel.actions.save}
           </Button>
+          </>
         ),
         // Empties the form, and clears the model with it: the surfaces ticked
         // here and those painted by restorations already on the tooth.
@@ -1706,6 +1835,156 @@ function ChartPanel() {
     }
     return null
   })()
+
+  /** Starts the restoration form of one kind. Restorations are charted on the Dental chart. */
+  const startRestoration = cariesPanelTooth
+    ? (kind: RestorationKind) => {
+        setRestorationDraft({
+          fdi: cariesPanelTooth.fdi,
+          typeId: kind.id,
+          // What this kind opens with — a veneer's buccal face; nothing for
+          // the others.
+          surfaces: kind.defaultSurfaces,
+          focus: kind.defaultSurfaces[0] ?? null,
+          material: null,
+          quality: null,
+          detail: null,
+          crownType: null,
+          crownBase: null,
+        })
+        openToothRecord('newRestoration', kind.id)
+      }
+    : undefined
+
+  /*
+   * The suggestion chips inside the free-text line, each wired to the thing
+   * it starts. Only on the Dental chart, where caries, treatment and
+   * restorations are charted; a suggestion with nothing to start here is
+   * left out rather than shown dead.
+   */
+  const quickSuggestions = cariesPanelTooth
+    ? odontogram.toothPanel.quickAdd.suggestions.flatMap((suggestion) => {
+        if (suggestion.id === 'caries') {
+          return [{ ...suggestion, onClick: () => openToothRecord('caries') }]
+        }
+        if (suggestion.id === 'treatment') {
+          return activeSurface
+            ? [{ ...suggestion, onClick: () => openTreatmentDialog(cariesPanelTooth, activeSurface) }]
+            : []
+        }
+        const kind = restorations.form.types.find((option) => option.id === suggestion.id)
+        return kind && startRestoration
+          ? [{ ...suggestion, onClick: () => startRestoration(kind) }]
+          : []
+      })
+    : []
+
+  // ── Keyboard ──
+  const { help } = odontogram.model
+  /**
+   * A tooth number being typed, or the one just typed that is not a tooth.
+   * The digits wait a beat for a second one — "1" could still become "14" —
+   * and Enter opens them at once.
+   */
+  const [typed, setTyped] = useState<{ digits: string; miss: boolean } | null>(null)
+  const typedTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(typedTimer.current), [])
+
+  /** Opens the tooth with this Universal number — showing its arch if it is hidden. */
+  const openTypedTooth = (digits: string) => {
+    window.clearTimeout(typedTimer.current)
+    const fdi = FDI_BY_UNIVERSAL.get(Number(digits))
+    if (!fdi) {
+      setTyped({ digits, miss: true })
+      typedTimer.current = window.setTimeout(() => setTyped(null), 1600)
+      return
+    }
+    const upper = fdi < 30
+    setArchView((current) =>
+      (upper && current === 'lower') || (!upper && current === 'upper') ? 'both' : current,
+    )
+    setSelectedFdi(fdi)
+    setTyped(null)
+  }
+
+  /*
+   * The chart's shortcuts, listed in the help dialog. Re-subscribed every
+   * render so the handler always sees the chart as it stands; it is one
+   * listener, so that costs nothing worth saving.
+   *
+   * Stands back whenever a key means something else where it was pressed:
+   * typing into a field, inside any dialog or menu (they have their own keys),
+   * with a modifier held (the browser's and the OS's shortcuts), and — for the
+   * arrows — on a tab strip or a radio group, which step with them.
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return
+      const target = event.target instanceof HTMLElement ? event.target : null
+      if (
+        target?.closest(
+          'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"], [role="listbox"], .MuiModal-root',
+        )
+      ) {
+        return
+      }
+      const { key } = event
+
+      if (/^[0-9]$/.test(key)) {
+        event.preventDefault()
+        window.clearTimeout(typedTimer.current)
+        const digits = (typed && !typed.miss ? typed.digits : '') + key
+        // Two digits, or one that no two-digit tooth starts with, is complete.
+        if (digits.length === 2 || Number(digits) > 3) {
+          openTypedTooth(digits)
+        } else {
+          setTyped({ digits, miss: false })
+          typedTimer.current = window.setTimeout(() => openTypedTooth(digits), 900)
+        }
+        return
+      }
+      if (key === 'Enter' && typed && !typed.miss) {
+        event.preventDefault()
+        openTypedTooth(typed.digits)
+        return
+      }
+      if (key === 'ArrowLeft' || key === 'ArrowRight') {
+        if (target?.closest('[role="tab"], [role="radio"], [role="slider"], [role="tablist"]')) return
+        // The order the tooth list runs in: Universal 1 → 32.
+        const order = [...teeth].sort((a, b) => universalFromFdi(a.fdi) - universalFromFdi(b.fdi))
+        if (order.length === 0) return
+        event.preventDefault()
+        const at = order.findIndex((tooth) => tooth.fdi === selectedFdi)
+        const step = key === 'ArrowRight' ? 1 : -1
+        const next =
+          at === -1
+            ? step === 1
+              ? order[0]
+              : order[order.length - 1]
+            : order[(at + step + order.length) % order.length]
+        setSelectedFdi(next.fdi)
+        return
+      }
+      if (key === 'Escape') {
+        if (openKind) openToothRecord(null)
+        else if (selectedFdi !== null) setSelectedFdi(null)
+        return
+      }
+      // D / P / E and U / L / B: the first letter of each chart and arch view.
+      const letter = key.toLowerCase()
+      const chart = odontogram.charts.find(
+        (option) => option.enabled && option.label[0].toLowerCase() === letter,
+      )
+      if (chart) {
+        setChartId(chart.id)
+        return
+      }
+      const arches = odontogram.archViews.find((option) => option[0] === letter)
+      if (arches) setArchView(arches)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   return (
       <Paper
@@ -1752,14 +2031,15 @@ function ChartPanel() {
           // goes for it: the group stays clear of the panel's width too.
           pl: sidePanelOpen
             ? PAST_TOOTH_PANEL
-            : findings.length > 0
+            : toothCards.length > 0
               ? (theme) => `calc(${FINDING_CARD_WIDTH}px + ${theme.spacing(2)})`
               : 0,
         }}
       >
         {/*
-          The finding cards: one compact card per finding on the chart in
-          view, each opening its tooth. They stand where the chart tabs used
+          The tooth cards: one per tooth with anything charted on it in the
+          chart in view — the tooth itself in miniature, its name, and its
+          findings as badges — each opening its tooth. They stand where the chart tabs used
           to — hung from the top-left of this header row and running down over
           the model, which is why they live here rather than on the layer
           below, which only starts under the row.
@@ -1767,7 +2047,7 @@ function ChartPanel() {
           Out of the way while a tooth panel is open: the panel takes that
           corner, and it has the tooth list for moving between teeth.
         */}
-        {!sidePanelOpen && findings.length > 0 && (
+        {!sidePanelOpen && toothCards.length > 0 && (
           <Box
             component="ul"
             aria-label={odontogram.findingCards.label}
@@ -1780,22 +2060,33 @@ function ChartPanel() {
               // and scrolls inside itself past that.
               maxHeight: (theme) => `calc(100vh - ${theme.spacing(FINDING_CARDS_CLEARANCE_UNITS)})`,
               overflowY: 'auto',
+              scrollbarWidth: 'none',
               // Room for the cards' shadows inside the scroller.
               m: -0.5,
               p: 0.5,
+              // The last cards dissolve towards the bottom edge, which says
+              // there are more below without a scrollbar saying it.
+              pb: 6,
+              maskImage: 'linear-gradient(to bottom, #000 calc(100% - 72px), transparent)',
               listStyle: 'none',
               display: 'flex',
               flexDirection: 'column',
               gap: 1,
             }}
           >
-            {findings.map((finding) => (
-              <FindingCard
-                key={finding.key}
-                finding={finding}
+            {toothCards.map(({ tooth, records: toothFindings }) => (
+              <ToothCard
+                key={tooth.fdi}
+                tooth={tooth}
+                records={toothFindings}
                 toothPrefix={odontogram.findingCards.toothPrefix}
-                selected={finding.fdi === selectedFdi}
-                onOpen={() => setSelectedFdi(finding.fdi)}
+                selected={tooth.fdi === selectedFdi}
+                onOpen={() => setSelectedFdi(tooth.fdi)}
+                onHover={(over) =>
+                  setHoveredCardFdi((current) =>
+                    over ? tooth.fdi : current === tooth.fdi ? null : current,
+                  )
+                }
               />
             ))}
           </Box>
@@ -1899,6 +2190,7 @@ function ChartPanel() {
         sx={{
           position: 'absolute',
           inset: 0,
+          bottom: SHORTCUT_BAR_HEIGHT,
           zIndex: 0,
           display: 'flex',
         }}
@@ -1906,6 +2198,7 @@ function ChartPanel() {
         <ArchModel
           teeth={sceneTeeth}
           selectedFdi={selectedFdi}
+          highlightFdi={hoveredCardFdi}
           perio={perio}
           perioReadings={perioReadings}
           caries={caries}
@@ -1968,6 +2261,12 @@ function ChartPanel() {
             teeth={teeth}
             tab={toothTab}
             onTabChange={setToothTab}
+            tabCounts={{
+              treatment: toothActions.length,
+              medication: odontogram.toothPanel.medication.rows.filter(
+                (row) => row.fdi === selectedTooth.fdi,
+              ).length,
+            }}
             flags={railFlags}
             records={toothRecords}
             onOpenRecord={openToothRecord}
@@ -1975,7 +2274,7 @@ function ChartPanel() {
               // "Not yet probed" is a fact about the tooth, said on its
               // overview — never left to be read off an empty list.
               perio && !panelReading ? (
-                <Alert severity="info" variant="outlined">
+                <Alert severity="info">
                   <AlertTitle sx={{ fontWeight: 700 }}>{perio.panel.unprobedTitle}</AlertTitle>
                   {perio.panel.unprobedBody}
                 </Alert>
@@ -1990,9 +2289,18 @@ function ChartPanel() {
             // on the Dental chart. Probing cannot be started on a tooth with
             // no readings yet, and endo has no form at all.
             sections={{
+              treatment: (
+                <ToothHistoryList
+                  part="actions"
+                  fdi={selectedTooth.fdi}
+                  actions={toothActions}
+                  onToggleDone={toggleActionDone}
+                />
+              ),
               medication: <ToothMedicationTable fdi={selectedTooth.fdi} />,
               history: (
                 <ToothHistoryList
+                  part="updates"
                   fdi={selectedTooth.fdi}
                   actions={toothActions}
                   onToggleDone={toggleActionDone}
@@ -2004,26 +2312,8 @@ function ChartPanel() {
               options: restorations.form.types,
             }}
             // Restorations are charted on the Dental chart, where they show.
-            onAddRestoration={
-              cariesPanelTooth
-                ? (kind) => {
-                    setRestorationDraft({
-                      fdi: cariesPanelTooth.fdi,
-                      typeId: kind.id,
-                      // What this kind opens with — a veneer's buccal face;
-                      // nothing for the others.
-                      surfaces: kind.defaultSurfaces,
-                      focus: kind.defaultSurfaces[0] ?? null,
-                      material: null,
-                      quality: null,
-                      detail: null,
-                      crownType: null,
-                      crownBase: null,
-                    })
-                    openToothRecord('newRestoration', kind.id)
-                  }
-                : undefined
-            }
+            onAddRestoration={startRestoration}
+            suggestions={quickSuggestions}
             // On the Dental chart the button offers the kinds of pathology;
             // caries is the one with a form. On Perio there is one thing to
             // record, so it opens straight away.
@@ -2086,8 +2376,13 @@ function ChartPanel() {
               alignItems: 'flex-end',
               pointerEvents: 'auto',
               // A step of air under the menus, so the first card does not
-              // butt against them.
+              // butt against them — and room all round inside the scroller
+              // for the cards' shadows, which a scroll box otherwise clips.
               pt: 1,
+              px: 1.5,
+              pb: 1.5,
+              mx: -1.5,
+              maxWidth: 'calc(100% + 24px)',
             }}
           >
             {/*
@@ -2115,10 +2410,23 @@ function ChartPanel() {
                   // user just did, so it should be read out politely.
                   role="status"
                   severity={decisionNotice.decision === 'treat' ? 'warning' : 'info'}
-                  variant="outlined"
+                  // The stock tinted alert, as the Storybook shows it: it
+                  // floats over the model, and a tinted card with its icon
+                  // reads as a notice there where an outline alone read as
+                  // another panel edge. Lifted, so it never blends into the
+                  // enamel behind it.
                   onClose={() => setDecisionNotice(null)}
                   slotProps={{ closeButton: { 'aria-label': caries.panel.dismissNotice } }}
-                  sx={{ width: '100%', bgcolor: 'background.paper' }}
+                  // Alert is a Paper, which draws its shadow from `elevation`
+                  // (a CSS variable) — a `boxShadow` in `sx` is overridden by it.
+                  elevation={3}
+                  // A hairline in its own colour, so the card has an edge on
+                  // the pale enamel as well as a shadow.
+                  sx={{
+                    width: '100%',
+                    border: '1px solid',
+                    borderColor: decisionNotice.decision === 'treat' ? 'warning.light' : 'info.light',
+                  }}
                 >
                   {noticeOption.notice.replace(
                     '{tooth}',
@@ -2177,15 +2485,6 @@ function ChartPanel() {
               lowerVisible={showLower}
             />
             <CornerAction item={odontogram.footerActions.start} />
-            <CornerAction
-              item={odontogram.footerActions.end}
-              expanded={Boolean(helpAnchor)}
-              onClick={(event) => {
-                setHelpAnchor(event.currentTarget)
-                // Opening the full help counts as having seen the tip.
-                dismissTip()
-              }}
-            />
           </Stack>
 
           {!sidePanelOpen && (
@@ -2199,25 +2498,40 @@ function ChartPanel() {
               endo={endo}
             />
           )}
-          {tipOpen && selectedFdi === null && (
-            <Box sx={{ pointerEvents: 'auto', minWidth: 0 }}>
-              <ChartTip help={odontogram.model.help} selectHint={selectHint} onClose={dismissTip} />
-            </Box>
-          )}
         </Stack>
+
+        {/* The tooth number being typed, centred over the model, and read
+            out — so a keypress that seems to do nothing is never a mystery. */}
+        <Box
+          role="status"
+          sx={{
+            position: 'absolute',
+            left: '50%',
+            bottom: 0,
+            transform: 'translateX(-50%)',
+            pointerEvents: 'none',
+          }}
+        >
+          {typed && (
+            <Chip
+              color={typed.miss ? 'default' : 'primary'}
+              label={(typed.miss ? help.noSuchTooth : help.typing).replace('{n}', typed.digits)}
+              sx={{ boxShadow: 3, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}
+            />
+          )}
+        </Box>
       </Box>
 
-      <ChartHelpPopover
-        help={odontogram.model.help}
-        selectHint={selectHint}
-        anchor={helpAnchor}
-        onClose={() => setHelpAnchor(null)}
-      />
+      {/* The keyboard strip along the card's bottom edge — in the flow,
+          under the asides layer, so it is never covered by the model or the
+          tooth panel: both stop short of it (`SHORTCUT_BAR_HEIGHT`). */}
+      <ShortcutBar help={help} />
 
       {treatmentDialog && (
         <AddTreatmentDialog
           key={treatmentDialog.key}
           open={treatmentDialog.open}
+          initial={treatmentDialog.initial}
           toothLine={treatmentDialog.toothLine}
           surface={treatmentDialog.surface}
           category={caries.legend.label}
@@ -2246,6 +2560,7 @@ function ChartPanel() {
 function ArchModel({
   teeth,
   selectedFdi,
+  highlightFdi,
   perio,
   perioReadings,
   caries,
@@ -2267,6 +2582,8 @@ function ArchModel({
 }: {
   teeth: Tooth[]
   selectedFdi: number | null
+  /** The tooth whose card is hovered; the others dim around it. */
+  highlightFdi: number | null
   perio: PerioChart | null
   perioReadings: PerioToothReading[]
   caries: CariesChart
@@ -2297,6 +2614,7 @@ function ArchModel({
       <ToothArch3D
         teeth={teeth}
         selectedFdi={selectedFdi}
+        highlightFdi={highlightFdi}
         perio={perio}
         perioReadings={perioReadings}
         caries={caries}
@@ -2541,6 +2859,9 @@ interface OpenToothRecord {
 /** Which record a card stands for — and so what opening it shows. */
 type RecordKind = 'caries' | 'implant' | 'perio' | 'endo' | 'restoration' | 'newRestoration'
 
+/** The kinds that are work done on the tooth, for the overview's second group. */
+const RESTORATION_KINDS: ReadonlySet<RecordKind> = new Set(['restoration', 'implant'])
+
 /**
  * The colour a dot in the tooth rail takes: a theme channel per chart type,
  * or `neutral` grey for the implant sites, which are a fact about the tooth
@@ -2572,22 +2893,18 @@ interface ChartFinding {
   kind: RecordKind
   /** Which one, where a tooth can carry several of the kind — two fillings, say. */
   recordId?: string
-  /**
-   * Whether it earns a card in the chart's own left-hand list. Everything
-   * charted shows on its tooth's overview; only what needs attention is
-   * listed for the whole mouth — a 2 mm probing is a record, not a finding.
-   */
-  notable: boolean
   /** Which legend swatch stands for it — the same mark the arch draws. */
   swatch: string
   /** What it is: "Caries", "Implant", "Probing depth 6 mm". */
   title: string
+  /** The few words on its badge in the chart's tooth cards: "Caries C2", "Implant". */
+  short: string
   /** The one line of detail worth a glance; everything else is in the tooth panel. */
   detail: string
 }
 
-/** Width of the finding-card column, px. */
-const FINDING_CARD_WIDTH = 232
+/** Width of the tooth-card column, px. */
+const FINDING_CARD_WIDTH = 280
 
 /**
  * What the finding cards must leave free of the viewport's height, in spacing
@@ -2666,6 +2983,206 @@ function FindingCard({
       >
         <Icon name="dropdown" size={18} />
       </Box>
+    </ButtonBase>
+  )
+}
+
+/** The mini tooth on a card: the chart's own mesh, drawn once and kept as a picture. */
+function ToothThumbnail({ tooth }: { tooth: Tooth }) {
+  const model = toothModels.find((item) => item.fdi === tooth.fdi)
+  const url = useToothThumbnail(model?.node, enamel(tooth.status, false), tooth.arch === 'upper')
+  return (
+    <Box
+      aria-hidden
+      sx={{
+        width: 56,
+        height: 56,
+        flexShrink: 0,
+        borderRadius: 1,
+        bgcolor: 'action.hover',
+        display: 'grid',
+        placeItems: 'center',
+        overflow: 'hidden',
+      }}
+    >
+      {url && <Box component="img" src={url} alt="" sx={{ width: '100%', height: '100%' }} />}
+    </Box>
+  )
+}
+
+/**
+ * The badges on a tooth card, one row. When there are more than fit, the row
+ * clips them with a soft white fade on the right; hovering the card (or
+ * focusing it) glides the row along to the last badge, and the fade moves to
+ * the left edge. There is no scrollbar and nothing to drag — the glide is the
+ * only way the hidden badges show, which is what keeps the card quiet.
+ *
+ * The distance to glide is measured, not guessed: the track's full width
+ * less the row's, re-measured whenever either changes.
+ */
+function BadgeRow({ records }: { records: ChartFinding[] }) {
+  const rowRef = useRef<HTMLDivElement>(null)
+  const trackRef = useRef<HTMLDivElement>(null)
+  const [overflow, setOverflow] = useState(0)
+
+  useLayoutEffect(() => {
+    const row = rowRef.current
+    const track = trackRef.current
+    if (!row || !track) return
+    const measure = () => setOverflow(Math.max(0, track.scrollWidth - row.clientWidth))
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(row)
+    observer.observe(track)
+    return () => observer.disconnect()
+  }, [records])
+
+  // A fade at one edge: white into nothing, over the clipped badges.
+  const fade = (side: 'left' | 'right') =>
+    ({
+      content: '""',
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      [side]: 0,
+      width: 40,
+      pointerEvents: 'none',
+      background: (theme: Theme) =>
+        `linear-gradient(to ${side === 'left' ? 'right' : 'left'}, ${theme.vars.palette.background.paper} 20%, transparent)`,
+      transition: (theme: Theme) => theme.transitions.create('opacity', { duration: theme.transitions.duration.shorter }),
+    }) as const
+
+  return (
+    <Box
+      ref={rowRef}
+      sx={{
+        position: 'relative',
+        overflow: 'hidden',
+        // The glide is the hover: the right fade goes as the row sets off,
+        // and the left one comes in behind it.
+        '&::after': { ...fade('right'), opacity: overflow > 0 ? 1 : 0 },
+        '&::before': { ...fade('left'), opacity: 0, zIndex: 1 },
+        '.MuiButtonBase-root:hover &::after, .MuiButtonBase-root.Mui-focusVisible &::after': {
+          opacity: 0,
+        },
+        '.MuiButtonBase-root:hover &::before, .MuiButtonBase-root.Mui-focusVisible &::before': {
+          opacity: overflow > 0 ? 1 : 0,
+        },
+      }}
+    >
+      <Stack
+        ref={trackRef}
+        direction="row"
+        sx={{
+          gap: 0.5,
+          width: 'max-content',
+          // Slow enough to be read as it passes: about 16px per 100ms, and
+          // never shorter than a long, leisurely transition.
+          transition: (theme) =>
+            theme.transitions.create('transform', {
+              duration: Math.max(theme.transitions.duration.complex * 2, overflow * 6),
+              easing: theme.transitions.easing.easeInOut,
+            }),
+          '.MuiButtonBase-root:hover &, .MuiButtonBase-root.Mui-focusVisible &': {
+            transform: `translateX(${-overflow}px)`,
+          },
+          '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+        }}
+      >
+        {records.map((record) => (
+          <Chip
+            key={record.key}
+            size="small"
+            variant="outlined"
+            icon={
+              <Box sx={{ display: 'flex', pl: 0.5 }}>
+                <LegendSwatch id={record.swatch} />
+              </Box>
+            }
+            label={record.short}
+            sx={{ flexShrink: 0, '& .MuiChip-label': { fontWeight: 500 } }}
+          />
+        ))}
+      </Stack>
+    </Box>
+  )
+}
+
+/**
+ * One tooth with something charted on it, as a card: the tooth in miniature,
+ * its name, and under the name its badges (`BadgeRow`). Opens the tooth. A button,
+ * so it is reachable from the keyboard; every record is in its text, never
+ * carried by a swatch alone, and the FDI number stays in the accessible text
+ * even though the card no longer prints it.
+ */
+function ToothCard({
+  tooth,
+  records,
+  toothPrefix,
+  selected,
+  onOpen,
+  onHover,
+}: {
+  tooth: Tooth
+  records: ChartFinding[]
+  toothPrefix: string
+  selected: boolean
+  onOpen: () => void
+  /** The pointer came onto, or left, the card. */
+  onHover: (over: boolean) => void
+}) {
+  const { typeLabels } = patientChart.odontogram.model
+  const name = `${toothPrefix} ${universalFromFdi(tooth.fdi)}${sideFromFdi(tooth.fdi)}`
+  return (
+    <ButtonBase
+      component="li"
+      onClick={onOpen}
+      onPointerEnter={() => onHover(true)}
+      onPointerLeave={() => onHover(false)}
+      aria-current={selected ? 'true' : undefined}
+      sx={{
+        width: '100%',
+        px: 1.5,
+        py: 1.25,
+        display: 'block',
+        // The arrow at the right edge of the name shows on hover.
+        '& .tooth-card-arrow': { opacity: 0, transition: (theme) => theme.transitions.create('opacity') },
+        '&:hover .tooth-card-arrow, &.Mui-focusVisible .tooth-card-arrow': { opacity: 1 },
+        textAlign: 'left',
+        borderRadius: 1.5,
+        // Solid, with a soft lift: these float over the model.
+        bgcolor: 'background.paper',
+        border: '1px solid',
+        borderColor: selected ? 'primary.main' : 'divider',
+        boxShadow: 1,
+        transition: (theme) => theme.transitions.create(['box-shadow', 'border-color']),
+        '&:hover, &.Mui-focusVisible': { borderColor: 'primary.main', boxShadow: 3 },
+      }}
+    >
+      <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+        <ToothThumbnail tooth={tooth} />
+        <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+          <Stack direction="row" sx={{ alignItems: 'center', mb: 0.75 }}>
+            <Typography variant="body2" noWrap sx={{ fontWeight: 600, lineHeight: 1.3, flexGrow: 1 }}>
+              {name}
+              {/* Both notations, for assistive tech: Universal 3 and FDI 3 are
+                  different teeth. Off screen — the badges take that line. */}
+              <Box component="span" sx={visuallyHidden}>
+                {` · FDI ${tooth.fdi} · ${typeLabels[tooth.type]}`}
+              </Box>
+            </Typography>
+            {/* The record's own caret, turned to point onward: this opens the tooth. */}
+            <Box
+              className="tooth-card-arrow"
+              aria-hidden
+              sx={{ display: 'flex', flexShrink: 0, color: 'text.secondary', transform: 'rotate(-90deg)' }}
+            >
+              <Icon name="dropdown" size={18} />
+            </Box>
+          </Stack>
+          <BadgeRow records={records} />
+        </Box>
+      </Stack>
     </ButtonBase>
   )
 }
@@ -2971,8 +3488,8 @@ function ImplantDetail({
   return (
     <Alert
       severity="info"
-      variant="outlined"
-      sx={{ bgcolor: 'background.paper', pointerEvents: 'auto', width: '100%' }}
+      elevation={3}
+      sx={{ pointerEvents: 'auto', width: '100%', border: '1px solid', borderColor: 'info.light' }}
     >
       <AlertTitle sx={{ fontWeight: 700 }}>{`${implants.title} · ${name}`}</AlertTitle>
 
@@ -3028,8 +3545,8 @@ function EndoDetail({
   return (
     <Alert
       severity="error"
-      variant="outlined"
-      sx={{ bgcolor: 'background.paper', pointerEvents: 'auto', width: '100%' }}
+      elevation={3}
+      sx={{ pointerEvents: 'auto', width: '100%', border: '1px solid', borderColor: 'error.light' }}
     >
       <AlertTitle sx={{ fontWeight: 700 }}>{`${endo.title} · ${name}`}</AlertTitle>
 
@@ -3420,6 +3937,9 @@ function ViewMenu({
 /** A tooth panel's width, px — also how far the bottom-left asides step aside for it. */
 const TOOTH_PANEL_WIDTH = 468
 
+/** Height of the keyboard strip along the chart's bottom edge, px. */
+const SHORTCUT_BAR_HEIGHT = 48
+
 /**
  * Where a tooth panel sits: flush against the card's left edge and the full
  * height of it, top edge to bottom edge — the same box the canvas fills.
@@ -3428,7 +3948,7 @@ const TOOTH_PANEL_SLOT_SX = {
   position: 'absolute',
   left: 0,
   top: 0,
-  bottom: 0,
+  bottom: SHORTCUT_BAR_HEIGHT,
   width: TOOTH_PANEL_WIDTH,
   maxWidth: '100%',
   zIndex: 2,
@@ -3452,12 +3972,15 @@ function ToothPanelHeader({
   tooth,
   closeLabel,
   onClose,
+  history,
   record,
 }: {
   titlePrefix: string
   tooth: Tooth
   closeLabel: string
   onClose: () => void
+  /** The History button beside the close button, on the overview. */
+  history?: { label: string; onOpen: () => void }
   /**
    * Set while a record is open: the heading then names the RECORD first — the
    * thing on screen — with the tooth after it, and a way back stands above it.
@@ -3467,9 +3990,22 @@ function ToothPanelHeader({
   const toothName = `${titlePrefix} ${universalFromFdi(tooth.fdi)}${sideFromFdi(tooth.fdi)}`
   const toothKind = `FDI ${tooth.fdi} · ${patientChart.odontogram.model.typeLabels[tooth.type]}`
   const close = (
-    <IconButton aria-label={closeLabel} onClick={onClose}>
-      <Icon name="close" size={22} />
-    </IconButton>
+    <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexShrink: 0 }}>
+      {history && (
+        <Button
+          size="small"
+          color="inherit"
+          startIcon={<Icon name="history" size={18} />}
+          onClick={history.onOpen}
+          sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}
+        >
+          {history.label}
+        </Button>
+      )}
+      <IconButton aria-label={closeLabel} onClick={onClose}>
+        <Icon name="close" size={22} />
+      </IconButton>
+    </Stack>
   )
 
   if (record) {
@@ -3528,6 +4064,65 @@ function ToothPanelHeader({
   )
 }
 
+/** The CSS variable the quick-add frame's gradient turns on, and the turn itself. */
+const QUICK_ADD_ANGLE = '--quick-add-angle'
+const QUICK_ADD_SPIN = 'quick-add-spin'
+/** The Add buttons' hover: their gradient sliding across. */
+const QUICK_ADD_SLIDE = 'quick-add-slide'
+/*
+ * `@property` registers the angle as a real <angle>, which is what lets it
+ * animate — an unregistered custom property only ever jumps. Global because
+ * `@property` cannot be scoped; the names are prefixed so nothing else can
+ * collide with them.
+ */
+const QUICK_ADD_STYLES = (
+  <GlobalStyles
+    styles={`
+      @property ${QUICK_ADD_ANGLE} { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+      @keyframes ${QUICK_ADD_SPIN} { to { ${QUICK_ADD_ANGLE}: 360deg; } }
+      @keyframes ${QUICK_ADD_SLIDE} { from { background-position: 0 0, 0 0; } to { background-position: -200% 0, 0 0; } }
+    `}
+  />
+)
+
+/**
+ * A suggestion chip in the quick-add field: a pill with a faint blue wash,
+ * light to dark across it, under a blue hairline — the Figma's "custom
+ * button" look, in the theme's `info` shades. No icon: the chip IS the
+ * action, and six of them with a plus each read as a row of plus signs.
+ */
+function SuggestionChip({
+  label,
+  onClick,
+  ...rest
+}: {
+  label: string
+  onClick: () => void
+  'aria-expanded'?: boolean
+}) {
+  return (
+    <Chip
+      size="small"
+      clickable
+      label={label}
+      onClick={onClick}
+      {...rest}
+      sx={(theme) => ({
+        height: 24,
+        color: 'text.primary',
+        border: '1px solid',
+        borderColor: 'info.main',
+        background: `linear-gradient(152deg, ${alpha(theme.palette.info.light, 0.16)} 43%, ${alpha(theme.palette.info.dark, 0.16)} 74%), ${theme.vars.palette.background.paper}`,
+        '& .MuiChip-label': { px: 1, fontWeight: 400 },
+        '&:hover, &.Mui-focusVisible': {
+          borderColor: 'info.dark',
+          background: `linear-gradient(152deg, ${alpha(theme.palette.info.light, 0.28)} 43%, ${alpha(theme.palette.info.dark, 0.28)} 74%), ${theme.vars.palette.background.paper}`,
+        },
+      })}
+    />
+  )
+}
+
 /**
  * The panel every tooth opens, whichever chart is up.
  *
@@ -3549,6 +4144,7 @@ function ToothPanel({
   teeth,
   tab,
   onTabChange,
+  tabCounts,
   flags,
   records,
   onOpenRecord,
@@ -3561,6 +4157,7 @@ function ToothPanel({
   onPickPathology,
   restorationKinds,
   onAddRestoration,
+  suggestions,
   sections,
   onClose,
   onSelectTooth,
@@ -3571,6 +4168,8 @@ function ToothPanel({
   /** Which section of the tooth's record is up — owned by the parent. */
   tab: ToothPanelTabId
   onTabChange: (tab: ToothPanelTabId) => void
+  /** How many entries a tab holds, shown as a small count beside its name; absent or 0 shows none. */
+  tabCounts?: Partial<Record<ToothPanelTabId, number>>
   /** The sets of teeth the rail marks with a dot. */
   flags: RailFlag[]
   /** What is charted on THIS tooth in the chart in view — the overview's cards. */
@@ -3608,6 +4207,8 @@ function ToothPanel({
    */
   restorationKinds: { label: string; options: RestorationKind[] }
   onAddRestoration?: (kind: RestorationKind) => void
+  /** The suggestion chips inside the free-text line, each already wired. */
+  suggestions: { id: string; label: string; onClick: () => void }[]
   onClose: () => void
   onSelectTooth: (fdi: number) => void
 }) {
@@ -3616,14 +4217,60 @@ function ToothPanel({
   const tabId = (id: ToothPanelTabId) => `${baseId}-tab-${id}`
   const panelId = `${baseId}-panel`
   const title = `${toothPanel.titlePrefix} ${universalFromFdi(tooth.fdi)}${sideFromFdi(tooth.fdi)}`
+  /** The tooth's dated history, shown in the panel's body off the History button. */
+  const [historyOpen, setHistoryOpen] = useState(false)
   // A record is a level inside Overview; the other tabs have no such level.
-  const open = tab === 'general' ? record : null
+  // The history is a level of its own, over whichever tab, with the same
+  // way back.
+  /*
+   * A tooth with nothing charted and nothing typed onto it has one thing to
+   * say — the overview's notice — so it shows that alone, without tabs to
+   * sections that would all be empty.
+   */
+  const healthy = records.length === 0 && notes.length === 0
+  const shownTab: ToothPanelTabId = healthy ? 'general' : tab
+  const open: OpenToothRecord | null = historyOpen
+    ? { title: toothPanel.historyButton, body: sections.history }
+    : shownTab === 'general'
+      ? record
+      : null
   const [draft, setDraft] = useState('')
+  /** Whether every suggestion chip shows, or only the first few. */
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false)
   const [confirmingReset, setConfirmingReset] = useState(false)
   /** The "Add restoration" button, while its menu of kinds is open. */
   const [kindsAnchor, setKindsAnchor] = useState<HTMLElement | null>(null)
   /** The "Add pathology" button, while ITS menu is open. */
   const [pathologyAnchor, setPathologyAnchor] = useState<HTMLElement | null>(null)
+  /*
+   * The two menus open on HOVER, as well as on click and keyboard. Leaving
+   * the button closes the menu after a beat — long enough to cross the gap
+   * into the menu, where entering cancels the close; leaving the menu closes
+   * it at once. One timer serves both, since only one menu is open at a time.
+   */
+  const closeTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(closeTimer.current), [])
+  const cancelClose = () => window.clearTimeout(closeTimer.current)
+  const scheduleClose = () => {
+    cancelClose()
+    closeTimer.current = window.setTimeout(() => {
+      setKindsAnchor(null)
+      setPathologyAnchor(null)
+    }, 180)
+  }
+  /** Props that make a menu's paper hold the menu open while hovered. */
+  const hoverMenuProps = (paper: { sx: object }) => ({
+    // The modal's backdrop would swallow every pointer move outside the
+    // paper — including the one back onto the button — so it lets them
+    // through, and the paper alone takes the pointer.
+    root: { sx: { pointerEvents: 'none' } },
+    paper: {
+      ...paper,
+      sx: { ...paper.sx, pointerEvents: 'auto' },
+      onMouseEnter: cancelClose,
+      onMouseLeave: scheduleClose,
+    },
+  })
 
   /*
    * The two menus are ONE width, set by the longest label in either list —
@@ -3636,7 +4283,11 @@ function ToothPanel({
     ...[...pathologyKinds.options, ...restorationKinds.options].map((kind) => kind.label.length),
   )
   const kindMenuPaper = {
-    sx: { minWidth: (theme: Theme) => `calc(${longestKind}ch + ${theme.spacing(4)})` },
+    // A 4px step of air between the menu's bottom edge and the button it
+    // opens up from — a negative top margin, since the popover is placed by
+    // `top` and a bottom margin would not move it. The close delay is long
+    // enough to cross the gap.
+    sx: { minWidth: (theme: Theme) => `calc(${longestKind}ch + ${theme.spacing(4)})`, mt: -0.5 },
   }
   /** Which "Add…" buttons open a menu, and whether it is open. */
   const menuAnchors: Record<string, HTMLElement | null | undefined> = {
@@ -3660,6 +4311,14 @@ function ToothPanel({
         : onAddPathology
           ? (_event: React.MouseEvent<HTMLElement>) => onAddPathology()
           : undefined,
+      // Hovering opens the menu where there is one to open.
+      onHover: onPickPathology
+        ? (event: React.MouseEvent<HTMLElement>) => {
+            cancelClose()
+            setKindsAnchor(null)
+            setPathologyAnchor(event.currentTarget)
+          }
+        : undefined,
       disabled: false,
     },
     {
@@ -3671,6 +4330,13 @@ function ToothPanel({
       onClick: onAddRestoration
         ? (event: React.MouseEvent<HTMLElement>) => setKindsAnchor(event.currentTarget)
         : undefined,
+      onHover: onAddRestoration
+        ? (event: React.MouseEvent<HTMLElement>) => {
+            cancelClose()
+            setPathologyAnchor(null)
+            setKindsAnchor(event.currentTarget)
+          }
+        : undefined,
       disabled: false,
     },
     // Switched off outright, last in the row: there is nothing to add an
@@ -3681,22 +4347,29 @@ function ToothPanel({
       label: toothPanel.actions.addImplant,
       icon: toothPanel.icons.addImplant,
       onClick: undefined,
+      onHover: undefined,
       disabled: true,
     },
   ]
 
   return (
+    <>
+    {QUICK_ADD_STYLES}
     <Paper
       component="section"
       // Raised, unlike every other card here: it floats over the model rather
       // than sitting in the page beside it, and the shadow is what says so.
-      elevation={8}
+      elevation={0}
       aria-label={title}
       sx={{
         width: '100%',
         flexShrink: 0,
         display: 'flex',
         overflow: 'hidden',
+        // A wide, soft shadow rather than a stock elevation: it reads as the
+        // panel lifting gently off the model, not as a hard-edged sheet.
+        boxShadow: (theme) =>
+          `0 0 0 1px ${theme.vars.palette.divider}, 0 8px 32px rgb(${theme.vars.palette.primary.mainChannel} / 0.14), 0 24px 64px rgb(${theme.vars.palette.primary.mainChannel} / 0.1)`,
         // Square. It lies flush against the card, which clips its own rounded
         // corners; a second radius in here would open a sliver onto the model
         // at each of them.
@@ -3721,24 +4394,27 @@ function ToothPanel({
             tooth={tooth}
             closeLabel={toothPanel.close}
             onClose={onClose}
+            history={
+              open ? undefined : { label: toothPanel.historyButton, onOpen: () => setHistoryOpen(true) }
+            }
             record={
               open
                 ? {
                     title: open.title,
                     backLabel: toothPanel.back,
-                    onBack: () => onOpenRecord(null),
+                    onBack: () => (historyOpen ? setHistoryOpen(false) : onOpenRecord(null)),
                   }
                 : undefined
             }
           />
 
-          {open ? (
+          {open || healthy ? (
             // Inside a record the tabs give way to a plain rule under the
             // heading: one level at a time.
             <Divider sx={{ mt: 1.5 }} />
           ) : (
             <Tabs
-              value={tab}
+              value={shownTab}
               onChange={(_, id: ToothPanelTabId) => onTabChange(id)}
               aria-label={toothPanel.tabsLabel}
               sx={{ mt: 1.5, minHeight: 'auto', borderBottom: 1, borderColor: 'divider' }}
@@ -3749,7 +4425,38 @@ function ToothPanel({
                   value={option.id}
                   id={tabId(option.id)}
                   aria-controls={panelId}
-                  label={option.label}
+                  label={
+                    // The count rides beside the name in a small pill — how
+                    // many treatments or prescriptions wait behind the tab,
+                    // so a tab with something in it says so before it opens.
+                    tabCounts?.[option.id] ? (
+                      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+                        <span>{option.label}</span>
+                        <Box
+                          component="span"
+                          sx={{
+                            minWidth: 20,
+                            height: 20,
+                            px: 0.75,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderRadius: 1.25,
+                            bgcolor: 'action.selected',
+                            color: 'text.primary',
+                            typography: 'caption',
+                            fontWeight: 600,
+                            lineHeight: 1,
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
+                          {tabCounts[option.id]}
+                        </Box>
+                      </Stack>
+                    ) : (
+                      option.label
+                    )
+                  }
                   sx={{
                     minHeight: 44,
                     minWidth: 0,
@@ -3766,30 +4473,62 @@ function ToothPanel({
         <Box
           role={open ? undefined : 'tabpanel'}
           id={panelId}
-          aria-labelledby={open ? undefined : tabId(tab)}
+          aria-labelledby={open || healthy ? undefined : tabId(shownTab)}
           sx={{ flexGrow: 1, minHeight: 0, overflowY: 'auto', p: 2.5 }}
         >
           {open ? (
             open.body
-          ) : tab === 'general' ? (
+          ) : shownTab === 'general' ? (
             <Stack spacing={1.5}>
               {overviewNote}
               {records.length > 0 ? (
-                <Stack component="ul" spacing={1} sx={{ m: 0, p: 0, listStyle: 'none' }}>
-                  {records.map((item) => (
-                    <FindingCard
-                      key={item.key}
-                      finding={item}
-                      selected={false}
-                      onOpen={() => onOpenRecord(item.kind, item.recordId)}
-                    />
-                  ))}
-                </Stack>
+                // Two groups, each under its heading: what is wrong with the
+                // tooth, then the work done on it. An empty group is left out.
+                [
+                  {
+                    id: 'pathologies',
+                    title: toothPanel.overviewGroups.pathologies,
+                    items: records.filter((item) => !RESTORATION_KINDS.has(item.kind)),
+                  },
+                  {
+                    id: 'restorations',
+                    title: toothPanel.overviewGroups.restorations,
+                    items: records.filter((item) => RESTORATION_KINDS.has(item.kind)),
+                  },
+                ]
+                  .filter((group) => group.items.length > 0)
+                  .map((group) => (
+                    <Box key={group.id}>
+                      <Typography
+                        id={`${baseId}-${group.id}`}
+                        variant="subtitle1"
+                        component="h4"
+                        sx={{ fontWeight: 600, mb: 1 }}
+                      >
+                        {group.title}
+                      </Typography>
+                      <Stack
+                        component="ul"
+                        aria-labelledby={`${baseId}-${group.id}`}
+                        spacing={1}
+                        sx={{ m: 0, p: 0, listStyle: 'none' }}
+                      >
+                        {group.items.map((item) => (
+                          <FindingCard
+                            key={item.key}
+                            finding={item}
+                            selected={false}
+                            onOpen={() => onOpenRecord(item.kind, item.recordId)}
+                          />
+                        ))}
+                      </Stack>
+                    </Box>
+                  ))
               ) : (
                 // Said outright rather than left to an empty list — and said
                 // with the notes still under it: a typed note is not a finding.
                 !overviewNote && (
-                  <Alert severity="info" variant="outlined">
+                  <Alert severity="info">
                     <AlertTitle sx={{ fontWeight: 700 }}>{toothPanel.emptyOverview.title}</AlertTitle>
                     {toothPanel.emptyOverview.body}
                   </Alert>
@@ -3835,7 +4574,7 @@ function ToothPanel({
               )}
             </Stack>
           ) : (
-            sections[tab]
+            sections[shownTab]
           )}
         </Box>
 
@@ -3917,7 +4656,7 @@ function ToothPanel({
           and under them a line to type on. No rule above them: they sit ON the
           panel, lifted by their shadow, rather than in a footer bar.
         */}
-        {!open && tab === 'general' && (
+        {!open && shownTab === 'general' && (
           <Stack spacing={1.5} sx={{ flexShrink: 0, px: 2.5, pt: 1, pb: 2 }}>
             <Stack direction="row" spacing={1}>
               {adders.map((adder) => (
@@ -3936,6 +4675,8 @@ function ToothPanel({
                     size="small"
                     startIcon={<Icon name={adder.icon} size={16} />}
                     onClick={adder.onClick}
+                    onMouseEnter={adder.onHover}
+                    onMouseLeave={adder.onHover ? scheduleClose : undefined}
                     disabled={adder.disabled}
                     aria-haspopup={menuAnchors[adder.id] !== undefined ? 'menu' : undefined}
                     aria-expanded={
@@ -3943,21 +4684,35 @@ function ToothPanel({
                     }
                     aria-disabled={adder.onClick || adder.disabled ? undefined : true}
                     disableRipple={!adder.onClick}
-                    sx={{
+                    sx={(theme) => ({
                       flex: '1 1 auto',
                       px: 1,
                       py: 0.75,
                       whiteSpace: 'nowrap',
+                      borderRadius: 1,
                       // Three labels and three glyphs share one narrow row:
                       // the glyph sits tight to its label.
                       '& .MuiButton-startIcon': { ml: 0, mr: 0.5 },
-                      bgcolor: 'background.paper',
-                      boxShadow: 2,
-                      // A disabled button does not float: no lift to press.
-                      '&.Mui-disabled': { boxShadow: 0 },
+                      // Filled blue, light to dark across the button, with
+                      // white ink — the field's own blue, so the buttons and
+                      // the field below read as one group.
+                      color: 'common.white',
+                      fontWeight: 500,
+                      border: 'none',
+                      // The gradient is laid out twice as wide as the button
+                      // and repeats, so on hover it can slide across without
+                      // a seam.
+                      background: `linear-gradient(90deg, ${alpha(theme.palette.info.light, 0.8)}, ${alpha(theme.palette.info.main, 0.8)} 50%, ${alpha(theme.palette.info.dark, 0.8)}, ${alpha(theme.palette.info.light, 0.8)}), ${theme.vars.palette.background.paper}`,
+                      backgroundSize: '200% 100%, auto',
+                      // A button with nothing behind it is plain paper.
+                      '&.Mui-disabled': { background: theme.vars.palette.background.paper, border: 'none' },
                       cursor: adder.onClick ? 'pointer' : 'default',
-                      '&:hover': { bgcolor: 'background.paper', boxShadow: adder.onClick ? 4 : 2 },
-                    }}
+                      '&:hover': {
+                        border: 'none',
+                        animation: adder.onClick ? `${QUICK_ADD_SLIDE} 1.6s linear infinite` : undefined,
+                      },
+                      '@media (prefers-reduced-motion: reduce)': { '&:hover': { animation: 'none' } },
+                    })}
                   >
                     {adder.label}
                   </Button>
@@ -3973,7 +4728,7 @@ function ToothPanel({
               onClose={() => setKindsAnchor(null)}
               anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
               transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-              slotProps={{ list: { 'aria-label': restorationKinds.label }, paper: kindMenuPaper }}
+              slotProps={{ list: { 'aria-label': restorationKinds.label }, ...hoverMenuProps(kindMenuPaper) }}
             >
               {restorationKinds.options.map((kind) => (
                 <MenuItem
@@ -3996,7 +4751,7 @@ function ToothPanel({
               onClose={() => setPathologyAnchor(null)}
               anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
               transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-              slotProps={{ list: { 'aria-label': pathologyKinds.label }, paper: kindMenuPaper }}
+              slotProps={{ list: { 'aria-label': pathologyKinds.label }, ...hoverMenuProps(kindMenuPaper) }}
             >
               {pathologyKinds.options.map((kind) => (
                 <MenuItem
@@ -4024,31 +4779,138 @@ function ToothPanel({
                 setDraft('')
               }}
             >
-              <TextField
-                size="small"
-                fullWidth
-                // A tooth's notes must not be offered back by the browser later.
-                autoComplete="off"
-                placeholder={toothPanel.quickAdd.placeholder}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                slotProps={{
-                  htmlInput: { 'aria-label': toothPanel.quickAdd.label },
-                  input: {
-                    // Decorative: the field's name already says what it adds.
-                    startAdornment: (
-                      <InputAdornment position="start" sx={{ color: 'text.secondary' }}>
-                        <Icon name={toothPanel.icons.quickAdd} size={18} />
-                      </InputAdornment>
-                    ),
-                  },
+              {/*
+                The field and its suggestion chips in one bordered box, after
+                the Figma: a 2px gradient frame — secondary into info — which
+                CSS cannot put on `border-color`, so it is painted as a frame
+                under a paper fill (`background-clip`). Hovered, the frame
+                glows in its two colours; focused anywhere inside, it goes
+                solid secondary.
+              */}
+              <Box
+                sx={(theme) => {
+                  const paper = `linear-gradient(${theme.vars.palette.background.paper}, ${theme.vars.palette.background.paper}) padding-box`
+                  // The Figma's frame: a pale ring of the secondary lilac and
+                  // the info blue fading through white, drawn as a conic
+                  // gradient so it can be turned.
+                  const ring = `conic-gradient(from var(${QUICK_ADD_ANGLE}), ${alpha(theme.palette.secondary.light, 0.55)}, ${alpha(theme.palette.info.light, 0.6)} 35%, ${theme.vars.palette.background.paper} 60%, ${alpha(theme.palette.secondary.light, 0.55)}) border-box`
+                  return {
+                    borderRadius: 1.5,
+                    // Thicker above and below than at the sides, as drawn.
+                    border: '2px solid transparent',
+                    borderTopWidth: 3,
+                    borderBottomWidth: 3,
+                    [QUICK_ADD_ANGLE]: '0deg',
+                    background: `${paper}, ${ring}`,
+                    transition: theme.transitions.create(['box-shadow']),
+                    // Hovered, the ring turns — one revolution every few
+                    // seconds — and the frame glows in its two colours.
+                    '&:hover': {
+                      animation: `${QUICK_ADD_SPIN} 3s linear infinite`,
+                      boxShadow: `-2px 0 6px -2px ${alpha(theme.palette.secondary.light, 0.6)}, 0 0 12px -1.5px ${alpha(theme.palette.info.main, 0.6)}`,
+                      '& .quick-add-input::placeholder': { color: 'text.primary', opacity: 0.8 },
+                      '& .quick-add-submit': { bgcolor: 'primary.main' },
+                    },
+                    // Focused anywhere inside, the ring gives way to a plain
+                    // blue frame — the field's own `info` blue.
+                    '&:focus-within': {
+                      animation: 'none',
+                      boxShadow: 'none',
+                      background: `${paper}, linear-gradient(${theme.vars.palette.info.main}, ${theme.vars.palette.info.main}) border-box`,
+                      '& .quick-add-submit': { bgcolor: 'common.black' },
+                    },
+                    '@media (prefers-reduced-motion: reduce)': { '&:hover': { animation: 'none' } },
+                  }
                 }}
-              />
+              >
+                <TextField
+                  size="small"
+                  fullWidth
+                  // A tooth's notes must not be offered back by the browser later.
+                  autoComplete="off"
+                  placeholder={toothPanel.quickAdd.placeholder}
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  slotProps={{
+                    htmlInput: { 'aria-label': toothPanel.quickAdd.label, className: 'quick-add-input' },
+                    input: {
+                      // The arrow that enters what was typed: a small dark
+                      // square at the line's end, darker on hover, black
+                      // while the field is focused.
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <IconButton
+                            type="submit"
+                            size="small"
+                            aria-label={toothPanel.quickAdd.submitLabel}
+                            className="quick-add-submit"
+                            edge="end"
+                            sx={(theme) => ({
+                              width: 24,
+                              height: 24,
+                              borderRadius: 0.75,
+                              bgcolor: 'primary.light',
+                              color: 'primary.contrastText',
+                              transition: theme.transitions.create('background-color'),
+                              '&:hover': { bgcolor: 'primary.main' },
+                            })}
+                          >
+                            {/* The back arrow, turned to point onward. */}
+                            <Box component="span" sx={{ display: 'flex', transform: 'scaleX(-1)' }}>
+                              <Icon name="back" size={16} />
+                            </Box>
+                          </IconButton>
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
+                  // The box draws the border; the field itself draws none.
+                  sx={{
+                    '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                    // The text starts where the chips under it start: the
+                    // root carries the inset, the input itself none.
+                    '& .MuiOutlinedInput-root': { pl: 1.25, pr: 1.25 },
+                    '& .MuiOutlinedInput-input': { pl: 0 },
+                  }}
+                />
+                {suggestions.length > 0 && (
+                  <Stack
+                    direction="row"
+                    role="group"
+                    aria-label={toothPanel.quickAdd.suggestionsLabel}
+                    sx={{ flexWrap: 'wrap', gap: 0.75, px: 1.25, pb: 1 }}
+                  >
+                    {(suggestionsOpen
+                      ? suggestions
+                      : suggestions.slice(0, toothPanel.quickAdd.visibleSuggestions)
+                    ).map((suggestion) => (
+                      <SuggestionChip
+                        key={suggestion.id}
+                        label={suggestion.label}
+                        onClick={suggestion.onClick}
+                      />
+                    ))}
+                    {/* The rest fold into one chip until it is pressed. */}
+                    {!suggestionsOpen &&
+                      suggestions.length > toothPanel.quickAdd.visibleSuggestions && (
+                        <SuggestionChip
+                          label={toothPanel.quickAdd.moreLabel.replace(
+                            '{n}',
+                            String(suggestions.length - toothPanel.quickAdd.visibleSuggestions),
+                          )}
+                          onClick={() => setSuggestionsOpen(true)}
+                          aria-expanded={false}
+                        />
+                      )}
+                  </Stack>
+                )}
+              </Box>
             </Box>
           </Stack>
         )}
       </Box>
     </Paper>
+    </>
   )
 }
 
@@ -4143,10 +5005,23 @@ function CariesForm({
   activeSurface,
   onSurfaceChange,
   onEditSurface,
+  onAddTreatment,
+  addTreatmentLabel,
+  plan,
+  onEditTreatment,
+  editTreatmentLabel,
 }: {
   tooth: Tooth
   caries: CariesChart
   assessment: CariesToothAssessment
+  /** Opens the treatment dialog — the Treatment block at the form's end. */
+  onAddTreatment: () => void
+  addTreatmentLabel: string
+  /** The treatment saved for this tooth, if any — shown as a card in the button's place. */
+  plan: TreatmentPlanLine | null
+  /** Reopens the dialog on the saved plan — the Edit button beside the heading. */
+  onEditTreatment: () => void
+  editTreatmentLabel: string
   /** The surface in hand — owned by the parent, which also outlines it on the arch. */
   activeSurface: CariesSurface
   onSurfaceChange: (surface: CariesSurface) => void
@@ -4159,6 +5034,7 @@ function CariesForm({
 }) {
   const { panel } = caries
   const surfacesId = useId()
+  const treatmentId = useId()
   const current = assessment.surfaces[activeSurface] ?? UNASSESSED
 
   return (
@@ -4200,11 +5076,123 @@ function CariesForm({
         columns={4}
         onChange={(grade) => onEditSurface(tooth.fdi, activeSurface, { grade })}
       />
+
+      {/* Last, under the assessment: the way to a treatment for it. The
+          dialog it opens is the same one as before; only the button moved
+          here from the bottom edge, where Monitor now stands. */}
+      <Box role="group" aria-labelledby={treatmentId}>
+        <Stack direction="row" sx={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <ChoiceHeading id={treatmentId}>{panel.treatmentTitle}</ChoiceHeading>
+          {/* Once a plan is saved, the way to change it: the dialog again,
+              filled in from the plan. */}
+          {plan && (
+            <Button
+              size="small"
+              startIcon={<Icon name="pencil" size={16} />}
+              onClick={onEditTreatment}
+              // Level with the heading, which has its own margin under it.
+              sx={{ mt: -0.75, py: 0.25, px: 1, minWidth: 0, color: 'text.secondary' }}
+            >
+              {editTreatmentLabel}
+            </Button>
+          )}
+        </Stack>
+        {plan ? (
+          <TreatmentPlanCard plan={plan} />
+        ) : (
+          <Button
+            variant="outlined"
+            fullWidth
+            startIcon={<Icon name="add" size={18} />}
+            onClick={onAddTreatment}
+            sx={{ py: 1.25, justifyContent: 'flex-start' }}
+          >
+            {addTreatmentLabel}
+          </Button>
+        )}
+      </Box>
     </Stack>
   )
 }
 
 /** The small heading over a group of choices in a tooth panel. */
+/**
+ * The treatment saved for a tooth, in the Treatment block once the dialog
+ * has been saved: the procedure with its CDT code, its fee opposite, and
+ * under them the prescriptions — each a compact read-only line. Nothing here
+ * edits: the dialog is where the plan is made, this is what it made.
+ */
+/** The fee, two decimals — the same way the dialog shows it. */
+const feeFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+function TreatmentPlanCard({ plan }: { plan: TreatmentPlanLine }) {
+  const { fee, prescription } = treatmentCopy
+  return (
+    // A wash of the brand navy at 8% — the same fill the tooth's Treatment
+    // and History cards have, so the plan reads as one of them.
+    <Box sx={{ borderRadius: 1.5, p: 1.5, bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08) }}>
+      <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
+        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+          <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1.3 }}>
+            {plan.procedure.name}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+            {plan.procedure.code}
+          </Typography>
+        </Box>
+        <Typography
+          variant="body2"
+          sx={{ fontWeight: 700, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}
+        >
+          {`${fee.currency}${feeFormat.format(plan.procedure.fee)}`}
+        </Typography>
+      </Stack>
+
+      {plan.prescriptions.length > 0 && (
+        <Box sx={{ mt: 1.5 }}>
+          <Typography
+            variant="caption"
+            component="h5"
+            color="text.secondary"
+            sx={{ display: 'block', fontWeight: 600, mb: 0.75 }}
+          >
+            {prescription.title}
+          </Typography>
+          <Stack component="ul" spacing={0.75} sx={{ m: 0, p: 0, listStyle: 'none' }}>
+            {plan.prescriptions.map((line) => (
+              <Stack
+                component="li"
+                key={line.id}
+                direction="row"
+                spacing={1}
+                sx={{
+                  alignItems: 'flex-start',
+                  px: 1.25,
+                  py: 1,
+                  borderRadius: 1,
+                  bgcolor: 'background.paper',
+                }}
+              >
+                <MedicationThumb name={line.name} size={40} />
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.3 }}>
+                    {line.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                    {[line.quantity && `${prescription.quantityPrefix} ${line.quantity}`, line.directions]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </Typography>
+                </Box>
+              </Stack>
+            ))}
+          </Stack>
+        </Box>
+      )}
+    </Box>
+  )
+}
+
 function ChoiceHeading({ id, children }: { id: string; children: string }) {
   return (
     <Typography
@@ -4640,14 +5628,14 @@ function PerioForm({
   return (
       <Stack spacing={2}>
         {!reading ? (
-          <Alert severity="info" variant="outlined">
+          <Alert severity="info">
             <AlertTitle sx={{ fontWeight: 700 }}>{perio.panel.unprobedTitle}</AlertTitle>
             {perio.panel.unprobedBody}
           </Alert>
         ) : (
           <>
             {healthy && (
-              <Alert severity="success" variant="outlined">
+              <Alert severity="success">
                 <AlertTitle sx={{ fontWeight: 700 }}>{perio.panel.healthyTitle}</AlertTitle>
                 {perio.panel.healthyBody}
               </Alert>
@@ -5011,9 +5999,9 @@ function ToothRail({
         flexShrink: 0,
         display: 'flex',
         minHeight: 0,
-        // A step darker than the page grey, so the rail reads as its own
-        // strip beside the white panel rather than as a paler part of it.
-        bgcolor: 'grey.300',
+        // The brand's lighter navy: the rail reads as its own dark strip
+        // beside the white panel, with the numbers in light ink on it.
+        bgcolor: 'primary.light',
       }}
     >
       <List
@@ -5051,10 +6039,10 @@ function ToothRail({
                 py: 0.75,
                 // Edge to edge: the chip spans the rail's full width.
                 borderRadius: 0,
-                // The full text colour: the lighter grey used on the paler
-                // rail fell under readable contrast on this darker one.
-                color: 'text.primary',
+                // Light ink on the navy rail.
+                color: 'primary.contrastText',
                 fontVariantNumeric: 'tabular-nums',
+                '&:hover': { bgcolor: (theme) => alpha(theme.palette.common.white, 0.12) },
                 // The picked tooth is a raised white bar on the grey rail, in
                 // bold — lighter than the brand fill, which the panel already
                 // spends on Save. Not colour alone: weight, surface and shadow
@@ -5069,17 +6057,19 @@ function ToothRail({
               <Typography variant="body2" sx={{ fontWeight: selected ? 700 : 500 }}>
                 {universalFromFdi(tooth.fdi)}
               </Typography>
-              {/* A dot beside the number for each thing the tooth already
-                  carries — where to look first in a list of thirty-two. One
-                  above the other when there are two, so neither runs into the
-                  number. The row's label says the same in words. */}
+              {/* A dot BEFORE the number for each thing the tooth already
+                  carries — where to look first in a list of thirty-two. White
+                  on the navy rail, and the flag's own colour on the selected
+                  row's white bar, where white would vanish. One above the
+                  other when there are two. The row's label says the same in
+                  words. */}
               {marks.length > 0 && (
                 <Stack
                   aria-hidden
                   spacing={0.25}
                   sx={{
                     position: 'absolute',
-                    right: 6,
+                    left: 6,
                     top: '50%',
                     transform: 'translateY(-50%)',
                   }}
@@ -5091,7 +6081,7 @@ function ToothRail({
                         width: 6,
                         height: 6,
                         borderRadius: '50%',
-                        bgcolor: RAIL_FLAG_COLOUR[mark.tone],
+                        bgcolor: selected ? RAIL_FLAG_COLOUR[mark.tone] : 'common.white',
                       }}
                     />
                   ))}
@@ -5222,117 +6212,104 @@ function CornerAction({
 
 // ─── CHART HELP ───────────────────────────────────────────────────────────
 
-/** localStorage key for "the first-visit tip has been dismissed". */
-const TIP_SEEN_KEY = 'emr-dental:chart-tip-seen'
-
-// Storage can be missing or throw (private windows, blocked site data); the
-// tip then simply shows again next visit, which is the safe failure.
-function readTipSeen() {
-  try {
-    return window.localStorage.getItem(TIP_SEEN_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-function writeTipSeen() {
-  try {
-    window.localStorage.setItem(TIP_SEEN_KEY, '1')
-  } catch {
-    // Not persisted; see `readTipSeen`.
-  }
-}
-
-/** The gestures, with the tooth click re-worded for the current chart tab. */
-function gesturesFor(help: ChartHelp, selectHint: string | null) {
-  return help.gestures.map((item) =>
-    item.id === 'select' && selectHint ? { ...item, action: selectHint } : item,
+/** One key, drawn as a key cap. */
+function KeyCap({ children }: { children: string }) {
+  return (
+    <Box
+      component="kbd"
+      sx={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 24,
+        height: 24,
+        px: 0.75,
+        borderRadius: 0.75,
+        border: '1px solid',
+        borderColor: 'divider',
+        bgcolor: 'background.paper',
+        boxShadow: (theme) => `0 1px 0 ${theme.vars.palette.divider}`,
+        typography: 'caption',
+        fontFamily: 'inherit',
+        fontWeight: 500,
+        color: 'text.primary',
+        whiteSpace: 'nowrap',
+        lineHeight: 1,
+      }}
+    >
+      {children}
+    </Box>
   )
 }
 
 /**
- * The one-time tip on a first visit: every gesture on one line, beside the
- * control strip whose "?" holds them for good. Dismissing it — or opening the full help —
- * stores that it was seen.
+ * The keyboard shortcuts, as one strip along the bottom edge of the chart:
+ * key caps and a few words each, read left to right. It replaced the
+ * "Charting help" button and the dialog behind it — the keys are few enough
+ * to keep in view, and a clinician charting from the keyboard should not have
+ * to open anything to see them.
+ *
+ * In the card's flow, not floated: the model and the tooth panel both stop
+ * above it, so it stays in view whatever is open.
  */
-function ChartTip({
-  help,
-  selectHint,
-  onClose,
-}: {
-  help: ChartHelp
-  selectHint: string | null
-  onClose: () => void
-}) {
-  const gestures = gesturesFor(help, selectHint)
+function ShortcutBar({ help }: { help: ChartHelp }) {
   return (
-    <Alert
-      severity="info"
-      variant="outlined"
-      onClose={onClose}
-      slotProps={{ closeButton: { 'aria-label': help.dismissLabel } }}
-      sx={{ bgcolor: 'background.paper', py: 0, alignItems: 'center' }}
-    >
-      <Typography variant="body2">
-        <Box component="strong" sx={{ fontWeight: 600 }}>
-          {help.tipTitle}:
-        </Box>{' '}
-        {gestures.map((item) => `${item.gesture} to ${item.short}`).join(' · ')}
-      </Typography>
-    </Alert>
-  )
-}
-
-/** The full help behind the "?" button: each gesture and what it does. */
-function ChartHelpPopover({
-  help,
-  selectHint,
-  anchor,
-  onClose,
-}: {
-  help: ChartHelp
-  selectHint: string | null
-  anchor: HTMLElement | null
-  onClose: () => void
-}) {
-  const gestures = gesturesFor(help, selectHint)
-  return (
-    <Popover
-      open={Boolean(anchor)}
-      anchorEl={anchor}
-      onClose={onClose}
-      // Opens to the RIGHT of the control strip, which stands on the card's left edge.
-      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-      slotProps={{
-        paper: { role: 'dialog', 'aria-label': help.title, sx: { ml: 1.5, p: 2.5, width: 300 } },
+    <Stack
+      component="ul"
+      aria-label={help.label}
+      direction="row"
+      sx={{
+        position: 'relative',
+        // Above the tooth panel (zIndex 2): the panel's wide shadow would
+        // otherwise fall across the strip, which has to read as the card's
+        // own edge, not something under the panel.
+        zIndex: 3,
+        flexShrink: 0,
+        height: SHORTCUT_BAR_HEIGHT,
+        // Out to the card's edges, past its padding, and flush with its
+        // bottom — the strip is the card's own bottom edge. A step of air
+        // above it, so the controls and the legend never sit on it.
+        mx: -4,
+        mb: -2.5,
+        mt: 2.5,
+        px: 4,
+        py: 0,
+        listStyle: 'none',
+        alignItems: 'center',
+        gap: 3,
+        overflowX: 'auto',
+        // A shade darker than the page behind the card, so the strip reads
+        // as a strip and not as a gap onto the page.
+        bgcolor: (theme) => darken(theme.palette.background.default, 0.05),
+        borderTop: (theme) => `1px solid ${theme.vars.palette.divider}`,
       }}
     >
-      <Typography variant="subtitle2" component="h3" sx={{ mb: 1.5 }}>
-        {help.title}
-      </Typography>
-      <Box
-        component="dl"
-        sx={{
-          m: 0,
-          display: 'grid',
-          gridTemplateColumns: 'auto 1fr',
-          columnGap: 2,
-          rowGap: 1,
-        }}
-      >
-        {gestures.map((item) => (
-          <Fragment key={item.id}>
-            <Typography component="dt" variant="body2" sx={{ fontWeight: 600 }}>
-              {item.gesture}
-            </Typography>
-            <Typography component="dd" variant="body2" color="text.secondary" sx={{ m: 0 }}>
-              {item.action}
-            </Typography>
-          </Fragment>
-        ))}
-      </Box>
-    </Popover>
+      {help.shortcuts.map((item) => (
+        <Stack
+          component="li"
+          key={item.id}
+          direction="row"
+          spacing={1}
+          sx={{ alignItems: 'center', flexShrink: 0 }}
+        >
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+            {item.keys.map((key, index) => (
+              <Fragment key={key}>
+                {index > 0 && item.joiner && (
+                  <Typography variant="caption" color="text.secondary" aria-hidden>
+                    {item.joiner}
+                  </Typography>
+                )}
+                <KeyCap>{key}</KeyCap>
+              </Fragment>
+            ))}
+          </Stack>
+          <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+            {item.action}
+          </Typography>
+        </Stack>
+      ))}
+    </Stack>
   )
 }
 

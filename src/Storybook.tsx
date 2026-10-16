@@ -683,9 +683,9 @@ function ButtonSection() {
   return (
     <Section
       title="Buttons"
-      blurb="Three variants × three sizes. Padding is a 3 × 3 matrix of variant × size — which is why theme.ts warns against setting padding on the root slot."
+      blurb="Four variants × three sizes. Padding is a matrix of variant × size — which is why theme.ts warns against setting padding on the root slot. `secondary` is ours: no border, a light grey fill, for the quiet action beside a contained one."
     >
-      {(['contained', 'outlined', 'text'] as const).map((variant) => (
+      {(['contained', 'secondary', 'outlined', 'text'] as const).map((variant) => (
         <Row key={variant} label={variant}>
           {(['small', 'medium', 'large'] as const).map((size) => (
             <Button key={size} variant={variant} size={size}>

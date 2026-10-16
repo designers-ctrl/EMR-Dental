@@ -29,6 +29,7 @@ import Typography from '@mui/material/Typography'
 import { NeutralToneMapping, Vector3, type PerspectiveCamera } from 'three'
 
 import logo from '../assets/EMRdentallogo.svg'
+import hexPattern from '../assets/hex-pattern.webp'
 import { login } from '../data/login.ts'
 import { ARCH_BOUNDS, toothModels } from '../data/toothModels.ts'
 import { enamel, useToothGeometries } from './toothScene.ts'
@@ -132,6 +133,94 @@ function Dentition() {
   )
 }
 
+// ─── THE BACKDROP ─────────────────────────────────────────────────────────
+
+/**
+ * Raised hexagons behind the teeth: the picture once from the top-left
+ * corner, and once turned half round from the bottom-right, so the two
+ * clusters frame the arch from opposite corners and leave its middle clear.
+ *
+ * The photo is a light grey relief. Blended `soft-light`, its own light and
+ * shade carry over onto the blue field and its flat grey all but vanishes, so
+ * the hexes read as pressed into the backdrop rather than pasted on it.
+ *
+ * Each copy fades out towards the middle. The bottom one needs more: its
+ * strong corner lands against the window's bottom edge and the card's gutter,
+ * where the backdrop is clipped — so it also fades off those two edges, and a
+ * blur rises as it fades, so the hexes go soft before they go, into the navy.
+ *
+ * Purely decorative — hidden from assistive tech, and behind the canvas in
+ * paint order so it never takes a pointer event from the model.
+ */
+function HexBackdrop() {
+  const copy = {
+    position: 'absolute',
+    width: '100%',
+    aspectRatio: '2000 / 1200',
+  } as const
+  const picture = {
+    ...copy,
+    backgroundImage: `url(${hexPattern})`,
+    backgroundSize: 'cover',
+    mixBlendMode: 'soft-light',
+  } as const
+  // In the copy's own frame: the bottom copy is turned half round, so its
+  // `0 0` — and its left and top edges — are the window's bottom-right.
+  const bottomFrame = { ...copy, bottom: 0, right: 0, transform: 'rotate(180deg)' } as const
+
+  return (
+    <Box
+      aria-hidden
+      sx={{
+        position: 'absolute',
+        inset: 0,
+        overflow: 'hidden',
+        pointerEvents: 'none',
+        // Only the picture half: the card covers the other one.
+        display: { xs: 'none', md: 'block' },
+        width: '50%',
+      }}
+    >
+      <Box
+        sx={{
+          ...picture,
+          top: 0,
+          left: 0,
+          // Strongest in its own corner and gone before any edge of the copy,
+          // so no seam shows where the picture stops.
+          maskImage: 'radial-gradient(ellipse 100% 100% at 0 0, #000 25%, transparent 80%)',
+        }}
+      />
+      <Box
+        sx={{
+          ...picture,
+          ...bottomFrame,
+          // Three fades, kept where all three agree: away from the corner,
+          // and off the clipped edges (the copy's left = the card's gutter,
+          // its top = the window's bottom).
+          maskImage: [
+            'radial-gradient(ellipse 110% 110% at 0 0, #000 25%, transparent 85%)',
+            'linear-gradient(to right, transparent, #000 18%)',
+            'linear-gradient(to bottom, transparent, #000 18%)',
+          ].join(', '),
+          maskComposite: 'intersect',
+        }}
+      />
+      {/* The blur that rises as the bottom copy fades: nothing at its
+          strongest, full where it is nearly gone. A backdrop blur, so it
+          softens the hexes underneath; the gradient it also covers is smooth
+          already and shows no change. */}
+      <Box
+        sx={{
+          ...bottomFrame,
+          backdropFilter: 'blur(6px)',
+          maskImage: 'radial-gradient(ellipse 110% 110% at 0 0, transparent 35%, #000 75%)',
+        }}
+      />
+    </Box>
+  )
+}
+
 // ─── THE FORM ─────────────────────────────────────────────────────────────
 
 function SignInForm({ onSignIn }: { onSignIn: () => void }) {
@@ -202,6 +291,7 @@ export default function Login({
   return (
     <Box
       sx={(theme) => ({
+        position: 'relative',
         display: 'flex',
         // A floor, not a ceiling: on a short window the card grows and the
         // page scrolls rather than clipping the form.
@@ -209,11 +299,16 @@ export default function Login({
         p: theme.layout.gutter,
         gap: theme.layout.gutter,
         bgcolor: 'primary.main',
-        // A light behind the model, in the brand colour's own derived shades —
-        // it lifts the teeth off the field without bringing in a second hue.
-        backgroundImage: `radial-gradient(circle at 28% 48%, ${theme.vars.palette.primary.light} 0%, ${theme.vars.palette.primary.main} 46%, ${theme.vars.palette.primary.dark} 100%)`,
+        // One radial light, centred on the model: the bright blue
+        // (`info.main`, #0288d1 — asked for by name) right behind the teeth,
+        // opening out into the brand navy, which holds everywhere else.
+        // `info` is a status channel; it is borrowed here as a backdrop hue
+        // only, where it carries no meaning.
+        backgroundImage: `radial-gradient(circle at 27% 50%, ${theme.vars.palette.info.main} 0%, ${theme.vars.palette.primary.main} 50%)`,
       })}
     >
+      <HexBackdrop />
+
       {/* The picture is the first thing dropped when there is no room for
           both: below `md` the form has the screen to itself. */}
       <Box
@@ -231,6 +326,8 @@ export default function Login({
         component="main"
         elevation={0}
         sx={{
+          // Positioned, so it paints above the hex backdrop wherever they meet.
+          position: 'relative',
           width: { xs: '100%', md: '50%' },
           flexShrink: 0,
           borderRadius: 2,
